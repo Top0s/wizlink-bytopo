@@ -217,3 +217,14 @@ input[type="text"], input[type="password"], input:not([type]), input[inputmode] 
   .tarjeta { padding: 18px; }
 }
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }
+
+/* Llaves que esperan confirmación (S1) */
+.tarjeta-espera { margin: 12px 0 16px; padding: 16px 18px; border-left: 4px solid var(--atencion-b, var(--borde)); }
+.tarjeta-espera p { margin: 0 0 8px; }
+.espera-datos { display: grid; grid-template-columns: max-content 1fr; gap: 6px 14px; margin: 0; }
+.espera-datos dt { color: var(--texto-2); }
+.espera-datos dd { margin: 0; }
+@media (max-width: 560px) { .espera-datos { grid-template-columns: 1fr; gap: 0; } .espera-datos dd { margin-bottom: 8px; } }
+.espera-titulo { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.formulario-espera { max-width: none; margin-top: 12px; }
+.botones { display: flex; flex-wrap: wrap; gap: 10px; }

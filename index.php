@@ -18,7 +18,11 @@ $lista = $soloProblemas
 abrir_pagina('', true, 'corridas');
 echo '<h1>Corridas recibidas</h1>';
 
-if (llave_creada() === null) {
+$esperando = count(llaves_esperando());
+if ($esperando > 0) {
+    echo aviso('atencion', '<p><strong>' . ($esperando === 1 ? 'Una llave de WizLink espera' : $esperando . ' llaves de WizLink esperan') . ' su confirmación.</strong> '
+        . 'Mientras tanto, las corridas no llegan: <a href="/llave.php">revisar en Llave de subida</a>.</p>');
+} elseif (llave_creada() === null) {
     echo aviso('atencion', '<p><strong>Todavía no hay llave de subida.</strong> WizLink no puede mandar nada hasta que use su código '
         . 'o se pegue una llave en la máquina virtual: <a href="/llave.php">Llave de subida</a>.</p>');
 }

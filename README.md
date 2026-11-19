@@ -73,8 +73,14 @@ huella. Llega de una de dos maneras («Llave de subida»):
    2. Se guarda como secreto `WIZLINK_RESPALDO_CODIGO` en GitHub: `ZaFi-Online/WizLink` › Settings › Environments ›
       `publicacion`. La próxima versión de WizLink lo trae (lo escribe el chequeo «Publicar» al compilar).
    3. En su primer respaldo, WizLink crea su propia llave, la guarda cifrada en la máquina virtual y la registra aquí
-      con el código (`api/registrar.php`). El código se quema: después solo acepta a esa misma llave (un reintento).
-   4. Desde ahí, todas las corridas suben con esa llave, también después de las actualizaciones.
+      con el código (`api/registrar.php`). La llave queda «esperando confirmación» (Iván, 19-nov: S1): todavía no sube
+      nada, y WizLink deja sus corridas pendientes (las reenvía hasta 7 días).
+   4. Iván la confirma en «Llave de subida» (Corridas avisa arriba cuando hay una). Ahí ve cuándo llegó, desde qué
+      dirección y qué corrida intentó subir, con qué versión. Al confirmarla, el código se quema y las demás que
+      esperaban se descartan; una de otra dirección, sin corridas de verdad, se rechaza. Así, alguien que sacara el
+      código del programa publicado (el portal de las actualizaciones se baja sin contraseña) no podría subir nada ni
+      dejar afuera a la máquina virtual. Cada dirección tiene una sola llave esperando y, como máximo, hay 10.
+   5. Desde ahí, todas las corridas suben con esa llave, también después de las actualizaciones.
    Hace falta otro código solo si se crea una llave nueva aquí, si se reinstala Windows o cambia el usuario de Windows de
    la máquina virtual, o si WizLink pasa a otra máquina.
 2. **Llave para pegar a mano** (`wzr_…`): el sitio la crea y la muestra una vez; Informática la pega en WizLink
@@ -82,15 +88,15 @@ huella. Llega de una de dos maneras («Llave de subida»):
 
 ## Lo que recibe (el contrato con WizLink)
 **Registrar la llave de WizLink:** `POST /api/registrar.php`, con `Authorization: Bearer wzr_…` (la llave que creó WizLink)
-y `X-WizLink-Codigo: wzc_…`. Responde JSON `{"ok", "ya_estaba", "mensaje"}`: 200 registrada (o ya estaba, si es la misma
-llave con el mismo código), 401 código equivocado, usado con otra llave o vencido, 429 demasiados intentos equivocados (con
-el código correcto nunca).
+y `X-WizLink-Codigo: wzc_…`. Responde JSON `{"ok", "ya_estaba", "pendiente", "mensaje"}`: 200 recibida, esperando la
+confirmación (`"pendiente": true`; o ya estaba, si es la misma llave con el mismo código), 401 código equivocado, usado
+con otra llave o vencido, 429 con 10 llaves esperando o demasiados intentos equivocados (con el código correcto nunca).
 
 **Subir una corrida:** `POST /api/subir.php`, con `Authorization: Bearer wzr_…`, `Content-Type: application/zip`, `X-WizLink-Corrida`
 (`AAAA-MM-DD HH.MM`, el nombre de la carpeta), `X-WizLink-Sha256` y `X-WizLink-Version`. Adentro del .zip:
 `<corrida>/…` con la carpeta completa y `bitacoras_wizlink/…`. Responde JSON `{"ok", "ya_estaba", "mensaje"}`: 200 guardada
-(o ya estaba igual), 400 o 413 rechazada, 401 llave, 422 llegó incompleta, 429 demasiados intentos con una llave
-equivocada, 500 error del sitio. Del lado de WizLink: `app/nucleo/EnvioRespaldo.cs`. Un cambio aquí tiene que seguir
+(o ya estaba igual), 400 o 413 rechazada, 401 llave, 409 la llave espera la confirmación (no se recibe nada; WizLink
+la deja pendiente), 422 llegó incompleta, 429 demasiados intentos con una llave equivocada, 500 error del sitio. Del lado de WizLink: `app/nucleo/EnvioRespaldo.cs`. Un cambio aquí tiene que seguir
 sirviéndole a esa versión.
 
 ## Carpetas
@@ -99,8 +105,8 @@ sirviéndole a esa versión.
 | `index.php` | La lista de corridas |
 | `entrar.php`, `salir.php` | La entrada en dos pasos (y crear el acceso la primera vez) y la salida |
 | `corrida.php`, `archivo.php`, `bajar.php` | Una corrida, un archivo y el .zip completo |
-| `llave.php` | La llave de subida: el código para WizLink o una llave para pegar a mano |
-| `api/subir.php`, `api/registrar.php` | Donde sube WizLink, y donde registra su llave una sola vez |
+| `llave.php` | La llave de subida: confirmar la que registró WizLink, el código para WizLink o una llave para pegar a mano |
+| `api/subir.php`, `api/registrar.php` | Donde sube WizLink, y donde registra su llave (que espera la confirmación) |
 | `lib/` | El código común (no se sirve): base, sesión, acceso (usuario y contraseña), código de la app, almacén y el marco de las páginas |
 | `assets/` | Estilos, iconos y los scripts del código QR y de «Copiar». `qrcode.js` es de Kazuhiko Arase (licencia MIT) |
 | `pruebas/` | La prueba de punta a punta (no se sirve) |
