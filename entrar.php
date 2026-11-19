@@ -71,7 +71,8 @@ function paso_codigo(string $dir, int $ahora): array
         $_SESSION = [];
         return ['Pasaron más de 10 minutos desde el usuario y la contraseña. Entre de nuevo.', null];
     }
-    if (totp_danado()) {
+    [$alta, $danado] = totp_estado();   // una sola lectura de totp.json para decidir entre el código y el alta
+    if ($danado) {
         // La página ya lo explica; no cuenta como un código equivocado
         registrar('segundo factor: totp.json no se puede leer; entrada detenida');
         return ['', null];
@@ -80,7 +81,6 @@ function paso_codigo(string $dir, int $ahora): array
         return ['Demasiados códigos equivocados. Intente de nuevo en ' . max(1, (int)ceil($espera / 60)) . ' minutos.', null];
     }
     $codigo = (string)($_POST['codigo'] ?? '');
-    $alta = totp_alta();
     if ($alta === null) {
         // Alta: el secreto todavía solo está en la sesión; se guarda con el primer código correcto
         $secretoB32 = (string)($_SESSION['alta_secreto'] ?? '');
@@ -135,6 +135,7 @@ if ($metodo === 'POST' && in_array($paso, ['alta', 'clave', 'codigo'], true)) {
 abrir_pagina('Entrar', false);
 echo '<section class="tarjeta tarjeta-entrar">';
 $errorHtml = $error !== '' ? aviso('error', '<p>' . h($error) . '</p>') : '';
+[$altaApp, $appDanada] = totp_estado();   // una sola lectura de totp.json para elegir la pantalla del paso 2
 
 if (acceso() === null) {
     codigo_alta();   // lo crea si falta, para que se pueda leer en el Administrador de archivos
@@ -164,7 +165,7 @@ if (acceso() === null) {
   <input id="clave" name="clave" type="password" autocomplete="current-password" required></div>
   <button type="submit" class="boton">Continuar</button>
 </form>';
-} elseif (totp_danado()) {
+} elseif ($appDanada) {
     // totp.json está pero no se puede leer: la entrada se detiene, sin ofrecer el alta de otra app (lib/totp.php)
     echo '<h1>Código de verificación</h1>
 <p class="ayuda">Paso 2 de 2.</p>' . aviso('error', '<p><strong>No se puede leer la configuración de la app de autenticación.</strong></p>'
@@ -172,7 +173,7 @@ if (acceso() === null) {
         . '<code>totp.json</code> en el Administrador de archivos de Hostinger y vuelva a entrar.</p>') . '
 <form method="post" action="/salir.php" class="otra-cuenta"><input type="hidden" name="ficha" value="' . h(ficha()) . '"><button type="submit" class="enlace-boton">Volver a empezar</button></form>';
 } else {
-    $alta = totp_alta();
+    $alta = $altaApp;
     if ($alta === null) {
         if (empty($_SESSION['alta_secreto'])) $_SESSION['alta_secreto'] = totp_secreto_nuevo();
         $secreto = (string)$_SESSION['alta_secreto'];

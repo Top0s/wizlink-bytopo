@@ -99,7 +99,17 @@ function totp_alta(): ?array
  */
 function totp_danado(): bool
 {
-    return file_exists(archivo_totp()) && totp_alta() === null;
+    return totp_estado()[1];
+}
+
+/**
+ * totp.json leído una sola vez: [el alta o null, true si está dañado]. Quien decide entre pedir el código y ofrecer el
+ * alta usa esto, para que una lectura que falle por un instante nunca lleve al alta.
+ */
+function totp_estado(): array
+{
+    $alta = totp_alta();
+    return [$alta, $alta === null && file_exists(archivo_totp())];
 }
 
 /** Un secreto nuevo de 20 bytes, en base32 (como lo piden las apps). */
