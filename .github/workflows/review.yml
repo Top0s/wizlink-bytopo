@@ -1,0 +1,98 @@
+# Review: automatic safety checks on every pull request (GitHub minutes included in the Pro plan).
+# Together with "Claude review" (claude-review.yml), GitHub keeps the Merge button locked until
+# both are green.
+#
+# safety-checks:
+#   1. no private files, no file over 5 MB and no secrets in the new commits
+#      (.github/scripts/safety-checks.sh);
+#   2. every PHP file is valid PHP (php -l), so a typo can't take a page down;
+#   3. every JavaScript file of our own is valid JavaScript (node --check);
+#   4. the phone-app manifests are valid JSON (the site must keep installing as an app);
+#   5. the checks themselves (.github/) have no known risky patterns (zizmor).
+# What each step found is on the check's "Summary" tab.
+name: Review
+
+on:
+  pull_request:
+    # edited: an edit re-runs every check, so none can end up "skipped" (GitHub counts a skipped
+    # check as passed). It also catches a change of the branch the pull request goes into.
+    types: [opened, synchronize, reopened, edited]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: review-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  safety-checks:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Get the repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: No secrets or private files
+        env:
+          BASE: ${{ github.event.pull_request.base.sha }}
+          HEAD: ${{ github.event.pull_request.head.sha }}
+        run: bash .github/scripts/safety-checks.sh "$BASE" "$HEAD"
+
+      - name: The checks themselves have no known risky patterns (zizmor)
+        # zizmor reads .github/ (these checks and Dependabot's settings). A warning that is there on
+        # purpose is marked on its line with "zizmor: ignore" and the reason. The zizmor version is
+        # pinned: raise it here from time to time.
+        if: success() || failure()
+        uses: zizmorcore/zizmor-action@45d7276c9ca790aabd705e31ca99c6185c3e76dd # v0.8.1
+        with:
+          version: 1.32.0
+          advanced-security: false
+          annotations: true
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        if: success() || failure()
+        with:
+          node-version: 24
+
+      - name: Every PHP file is valid
+        if: success() || failure()
+        run: |
+          set -uo pipefail
+          command -v php >/dev/null || { echo "::error::PHP is not on this machine"; exit 1; }
+          php --version | head -1
+          bad=0; n=0
+          while IFS= read -r -d '' f; do
+            n=$((n+1))
+            php -l "$f" >/dev/null 2>"$RUNNER_TEMP/php.txt" || { bad=1; echo "::error file=$f::$(head -c 400 "$RUNNER_TEMP/php.txt")"; }
+          done < <(git ls-files -z '*.php' ':(exclude)vendor/**')
+          echo "- $( [ $bad = 0 ] && echo ✅ || echo ❌ ) $n PHP files checked" >> "$GITHUB_STEP_SUMMARY"
+          exit $bad
+
+      - name: Every JavaScript file of our own is valid
+        if: success() || failure()
+        run: |
+          set -uo pipefail
+          bad=0; n=0
+          while IFS= read -r -d '' f; do
+            case "$f" in vendor/*|*/vendor/*|*.min.js) continue ;; esac
+            n=$((n+1))
+            node --check "$f" 2>"$RUNNER_TEMP/js.txt" || { bad=1; echo "::error file=$f::$(head -c 400 "$RUNNER_TEMP/js.txt")"; }
+          done < <(git ls-files -z '*.js' '*.mjs')
+          echo "- $( [ $bad = 0 ] && echo ✅ || echo ❌ ) $n JavaScript files checked" >> "$GITHUB_STEP_SUMMARY"
+          exit $bad
+
+      - name: The phone-app manifests are valid
+        if: success() || failure()
+        run: |
+          set -uo pipefail
+          bad=0; n=0
+          while IFS= read -r -d '' f; do
+            n=$((n+1))
+            node -e 'JSON.parse(require("fs").readFileSync(process.argv[1], "utf8"))' "$f" || { bad=1; echo "::error file=$f::not valid JSON"; }
+          done < <(git ls-files -z '*.webmanifest')
+          echo "- $( [ $bad = 0 ] && echo ✅ || echo ❌ ) $n app manifests checked" >> "$GITHUB_STEP_SUMMARY"
+          exit $bad

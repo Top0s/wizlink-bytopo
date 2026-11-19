@@ -1,0 +1,16 @@
+# Nunca en el repositorio: lo privado vive en wizlink-private/, junto a public_html (README.md)
+wizlink-private/
+config.php
+.env*
+*.key
+*.pem
+*.credencial
+*.llave
+# Corridas y copias: nunca aquí (traen datos de clientes)
+*.zip
+*.part
+*.bak
+*.log
+corridas/
+estado/
+registro/
