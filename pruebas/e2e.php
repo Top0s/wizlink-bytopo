@@ -116,12 +116,12 @@ ok(str_contains($l['cuerpo'], 'Todavía no hay llave de subida'), 'avisa que fal
 // ------------------------------------------------------------------ la llave de subida
 $pl = pedir('GET', '/llave.php');
 $fichaIn = preg_match('/name="ficha" value="([0-9a-f]{64})"/', $pl['cuerpo'], $m) ? $m[1] : '';
-ok(pedir('POST', '/llave.php', ['cuerpo' => http_build_query(['ficha' => 'mala'])])['codigo'] === 200 && llave_de(pedir('POST', '/llave.php', ['cuerpo' => http_build_query(['ficha' => 'mala'])])['cuerpo']) === '', 'sin la ficha no se crea llave');
-$r = pedir('POST', '/llave.php', ['cuerpo' => http_build_query(['ficha' => $fichaIn]), 'cabeceras' => ['Origin: https://wizlink.bytopo.net']]);
+ok(pedir('POST', '/llave.php', ['cuerpo' => http_build_query(['ficha' => 'mala', 'que' => 'llave'])])['codigo'] === 200 && llave_de(pedir('POST', '/llave.php', ['cuerpo' => http_build_query(['ficha' => 'mala', 'que' => 'llave'])])['cuerpo']) === '', 'sin la ficha no se crea llave');
+$r = pedir('POST', '/llave.php', ['cuerpo' => http_build_query(['ficha' => $fichaIn, 'que' => 'llave']), 'cabeceras' => ['Origin: https://wizlink.bytopo.net']]);
 $llave = llave_de($r['cuerpo']);
 ok(preg_match('/^wzr_[A-Za-z0-9_-]{43}$/', $llave) === 1, 'se crea la llave wzr_…');
 ok(!str_contains((string)@file_get_contents($privado . '/estado/llave.json'), $llave), 'el sitio no guarda la llave, solo su huella');
-$r = pedir('POST', '/llave.php', ['cuerpo' => http_build_query(['ficha' => $fichaIn]), 'cabeceras' => ['Origin: https://wizlink.bytopo.net']]);
+$r = pedir('POST', '/llave.php', ['cuerpo' => http_build_query(['ficha' => $fichaIn, 'que' => 'llave']), 'cabeceras' => ['Origin: https://wizlink.bytopo.net']]);
 ok(llave_de($r['cuerpo']) === '' && str_contains($r['cuerpo'], 'marque la casilla'), 'reemplazarla pide confirmar');
 
 function llave_de(string $html): string { return preg_match('/id="llave" class="llave" value="(wzr_[^"]+)"/', $html, $m) ? $m[1] : ''; }
@@ -165,6 +165,36 @@ $dv = file_get_contents($zv);
 ok($subir(array_merge(array_slice($cabBuena, 0, 2), ['X-WizLink-Corrida: ' . $vieja, 'X-WizLink-Sha256: ' . hash('sha256', $dv)]), $dv)['codigo'] === 200, 'subir: una corrida vieja se recibe');
 $clVieja = str_replace(' ', '_', $vieja);
 ok(!is_file($privado . '/corridas/' . substr($clVieja, 0, 7) . '/' . $clVieja . '.zip'), 'la limpieza borra la de más de 30 días');
+
+// ------------------------------------------------------------------ el código para WizLink (L4)
+$pl = pedir('GET', '/llave.php');
+$r = pedir('POST', '/llave.php', ['cuerpo' => http_build_query(['ficha' => ficha_de($pl['cuerpo']), 'que' => 'codigo']), 'cabeceras' => $origen]);
+$codigo = preg_match('/id="codigo-nuevo" class="llave" value="(wzc_[^"]+)"/', $r['cuerpo'], $m) ? $m[1] : '';
+ok(preg_match('/^wzc_[A-Za-z0-9_-]{43}$/', $codigo) === 1, 'código para WizLink: se crea y se muestra una vez');
+ok(!str_contains((string)@file_get_contents($privado . '/estado/codigo_wizlink.json'), $codigo), 'código para WizLink: el sitio guarda solo su huella');
+$r = pedir('POST', '/llave.php', ['cuerpo' => http_build_query(['ficha' => ficha_de($pl['cuerpo']), 'que' => 'codigo']), 'cabeceras' => $origen]);
+ok(str_contains($r['cuerpo'], 'Ya hay un código para WizLink sin usar'), 'código para WizLink: reemplazar uno sin usar pide confirmar');
+$propia = 'wzr_' . str_repeat('P', 40) . '-_1';
+$otra = 'wzr_' . str_repeat('Q', 40) . '-_2';
+$registrar = function (string $llaveR, string $codigoR) {
+    return pedir('POST', '/api/registrar.php', ['sin_cookies' => true, 'cabeceras' => ['Authorization: Bearer ' . $llaveR, 'X-WizLink-Codigo: ' . $codigoR], 'cuerpo' => '']);
+};
+ok(pedir('GET', '/api/registrar.php', ['sin_cookies' => true])['codigo'] === 405, 'registrar: GET no');
+ok(in_array($registrar($propia, 'wzc_' . str_repeat('Z', 43))['codigo'], [401, 429], true), 'registrar: un código equivocado no sirve');
+ok(in_array($registrar($propia, '')['codigo'], [401, 429], true), 'registrar: sin código no sirve');
+ok($registrar('corta', $codigo)['codigo'] === 401, 'registrar: una llave con otra forma no sirve');
+$r = $registrar($propia, $codigo);
+ok($r['codigo'] === 200 && str_contains($r['cuerpo'], '"ya_estaba":false'), "registrar: WizLink registra su llave con el código ({$r['codigo']} {$r['cuerpo']})");
+$r = $registrar($propia, $codigo);
+ok($r['codigo'] === 200 && str_contains($r['cuerpo'], '"ya_estaba":true'), 'registrar: el mismo reintento (después de un corte) ya estaba');
+ok($registrar($otra, $codigo)['codigo'] === 401, 'registrar: el código ya usado no sirve para otra llave');
+ok($subir(array_merge(['Authorization: Bearer ' . $propia], array_slice($cabBuena, 1)), $datos)['codigo'] === 200, 'subir: con la llave registrada por WizLink');
+ok(in_array($subir($cabBuena, $datos)['codigo'], [401, 429], true), 'subir: la llave para pegar a mano anterior ya no sirve (401, o 429 después de tantas equivocadas)');
+$pl = pedir('GET', '/llave.php');
+ok(str_contains($pl['cuerpo'], 'Registrada por WizLink') && str_contains($pl['cuerpo'], 'lo usó WizLink'), 'la página dice que la llave la registró WizLink');
+ok(!str_contains($pl['cuerpo'], $propia) && !str_contains($pl['cuerpo'], $codigo), 'la página nunca muestra la llave ni el código usados');
+ok(!str_contains((string)@file_get_contents($privado . '/estado/llave.json'), $propia), 'el sitio guarda solo la huella de la llave de WizLink');
+$cabBuena[0] = 'Authorization: Bearer ' . $propia;   // lo que sigue sube con la llave de WizLink
 
 // ------------------------------------------------------------------ ver
 $clave = str_replace(' ', '_', $corrida);

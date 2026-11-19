@@ -20,8 +20,6 @@ declare(strict_types=1);
 require_once __DIR__ . '/../lib/base.php';
 require_once __DIR__ . '/../lib/almacen.php';
 
-const FALLOS_POR_HORA = 30;
-
 encabezados_seguridad();
 
 if (($_SERVER['REQUEST_METHOD'] ?? '') !== 'POST') {
@@ -33,21 +31,13 @@ $ahora = time();
 
 // La llave primero: una llave correcta siempre entra. El tope de intentos solo frena a las equivocadas (con 256 bits,
 // adivinarla es imposible; el tope evita que alguien llene la bitácora), y así nadie puede bloquear las subidas buenas.
-$llave = '';
-$auth = $_SERVER['HTTP_AUTHORIZATION'] ?? $_SERVER['REDIRECT_HTTP_AUTHORIZATION'] ?? '';
-if ($auth === '' && function_exists('getallheaders')) {
-    foreach (getallheaders() as $k => $v) if (strcasecmp((string)$k, 'Authorization') === 0) $auth = (string)$v;
-}
-if (preg_match('/^Bearer\s+(\S+)$/', $auth, $m)) $llave = $m[1];
+$llave = llave_de_la_peticion();
 if (!llave_correcta($llave)) {
-    $archivoFallos = carpeta('estado') . '/subidas_rechazadas.json';
-    $fallos = array_values(array_filter((array)(leer_json($archivoFallos)['fallos'] ?? []), fn($t) => is_int($t) && $ahora - $t < 3600));
-    if (count($fallos) >= FALLOS_POR_HORA) {
+    if (demasiados_fallos($ahora)) {
         header('Retry-After: 3600');
         responder_json(429, ['ok' => false, 'mensaje' => 'Demasiados intentos con una llave equivocada. Se recibe de nuevo dentro de una hora.']);
     }
-    $fallos[] = $ahora;
-    try { escribir_json($archivoFallos, ['fallos' => $fallos]); } catch (Throwable $e) { }
+    anotar_fallo($ahora);
     registrar('subida rechazada: llave ' . ($llave === '' ? 'ausente' : 'equivocada') . ' desde ' . ($_SERVER['REMOTE_ADDR'] ?? '?'));
     responder_json(401, ['ok' => false, 'mensaje' => 'La llave de subida no sirve o fue reemplazada. Cree una nueva en wizlink.bytopo.net › Llave de subida.']);
 }

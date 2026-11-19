@@ -12,8 +12,9 @@ Lo que es el sitio, cómo se publica y cómo se prueba: `README.md`. Aquí, las 
    y el código de 6 dígitos (de un solo uso, con bloqueo). El acceso se crea solo con el código de alta, que se lee en
    el Administrador de archivos de Hostinger.
 4. **La llave de subida solo sube.** `api/subir.php` nunca muestra, lista ni devuelve una corrida. El sitio guarda solo
-   la huella de la llave.
-5. **El contrato con WizLink.** Lo que recibe `api/subir.php` (encabezados, el .zip y la respuesta) lo usa
+   las huellas de la llave y del código para WizLink. El código sirve una sola vez (`api/registrar.php`): después solo
+   acepta a la misma llave que lo usó.
+5. **El contrato con WizLink.** Lo que reciben `api/subir.php` y `api/registrar.php` (encabezados, el .zip y la respuesta) lo usa
    `app/nucleo/EnvioRespaldo.cs` de `ZaFi-Online/WizLink`. Un cambio aquí tiene que seguir sirviéndole a la versión
    instalada en la máquina virtual; si no, primero cambia WizLink.
 6. **Nada se ejecuta de lo que llega.** Los .zip se guardan tal cual, fuera de `public_html`, y se leen con `ZipArchive`
