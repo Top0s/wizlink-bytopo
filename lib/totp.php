@@ -7,9 +7,11 @@
 //     muestra una sola vez, como código QR, para agregarlo a la app.
 //   - Un código sirve una sola vez, y se aceptan el de ahora y los de 30 segundos antes o después (por si el reloj del
 //     teléfono va un poco corrido).
-//   - Cinco códigos equivocados seguidos bloquean la entrada 15 minutos.
+//   - Cinco códigos equivocados seguidos bloquean la entrada 15 minutos (de uno en uno, con el candado de la entrada).
 //   - Si se pierde el teléfono: en el Administrador de archivos de Hostinger se borra wizlink-private/estado/totp.json
-//     y, al entrar de nuevo con el usuario y la contraseña, el sitio pide dar de alta la app otra vez.
+//     y, al entrar de nuevo con el usuario y la contraseña, el sitio pide dar de alta la app otra vez. Las sesiones
+//     abiertas (también la del teléfono perdido) se cierran solas (lib/sesion.php).
+//   - Si totp.json está pero no se puede leer, la entrada se detiene (totp_danado): nunca pide dar de alta otra app.
 
 declare(strict_types=1);
 
@@ -88,6 +90,16 @@ function totp_alta(): ?array
     $d = leer_json(archivo_totp());
     if ($d === null || !is_string($d['secreto'] ?? null) || base32_decodificar($d['secreto']) === null) return null;
     return $d;
+}
+
+/**
+ * true si totp.json existe pero no se puede leer o no se entiende (editado a mano, permisos cambiados, una copia a
+ * medias). Entonces la entrada se detiene: nunca se ofrece dar de alta otra app, porque cualquiera que sepa la
+ * contraseña podría poner la suya. Para darla de alta otra vez se borra el archivo en el Administrador de archivos.
+ */
+function totp_danado(): bool
+{
+    return file_exists(archivo_totp()) && totp_alta() === null;
 }
 
 /** Un secreto nuevo de 20 bytes, en base32 (como lo piden las apps). */

@@ -25,12 +25,14 @@ Las corridas traen datos de clientes (Iván, 19-nov: A1). Lo que se baja de aqu�
 
 ## Cómo se entra
 1. **Usuario y contraseña.** La contraseña nunca se guarda: solo su huella (bcrypt). Cinco intentos equivocados desde una
-   misma dirección la bloquean 15 minutos.
+   misma dirección (en IPv6, la misma red /64) la bloquean 15 minutos.
 2. **El código de 6 dígitos** de una app de autenticación gratuita (Google Authenticator, Microsoft Authenticator, 2FAS o
    Aegis). Es el estándar abierto TOTP: no hay servicio externo ni costo. Cada código sirve una sola vez, y cinco
    códigos equivocados seguidos bloquean la entrada 15 minutos.
 
-La sesión vence a los 30 minutos sin uso y a las 12 horas.
+Los intentos se atienden de uno en uno: muchos a la vez tampoco pasan del tope de cinco. La sesión vence a los 30 minutos
+sin uso y a las 12 horas. Si se borra o se cambia `acceso.json` o `totp.json`, todas las sesiones abiertas se cierran en su
+próximo clic.
 
 **La primera vez (crear el acceso):** el sitio pide un código de alta que solo se puede leer en hPanel › Administrador de
 archivos, en `wizlink-private/estado/codigo_alta.txt` (lo crea el sitio al abrir la entrada). Con él se eligen el
@@ -38,10 +40,13 @@ usuario y la contraseña (al menos 12 caracteres) y después se escanea el códi
 el acceso, aunque llegue al sitio antes.
 
 **Si se olvida la contraseña:** borrar `wizlink-private/estado/acceso.json` en el Administrador de archivos y crear el
-acceso otra vez. La app de autenticación sigue igual.
+acceso otra vez. La app de autenticación sigue igual. Las sesiones abiertas se cierran solas.
 
 **Si se pierde el teléfono:** borrar también `wizlink-private/estado/totp.json`. Al entrar con la contraseña, el sitio
-pide dar de alta la app otra vez.
+pide dar de alta la app otra vez. Las sesiones abiertas, también la del teléfono perdido, se cierran solas.
+
+**Si `totp.json` está pero no se puede leer** (por ejemplo, se editó a mano): el sitio detiene la entrada y pide borrarlo.
+Nunca ofrece configurar otra app por su cuenta, porque cualquiera que supiera la contraseña podría poner la suya.
 
 ## Cómo se publica (Hostinger)
 - Un sitio propio en hPanel: `wizlink.bytopo.net` (PHP 8.3, sin base de datos, CDN apagado).
@@ -93,9 +98,11 @@ confirmación (`"pendiente": true`; o ya estaba, si es la misma llave con el mis
 con otra llave o vencido, 429 con 10 llaves esperando o demasiados intentos equivocados (con el código correcto nunca).
 
 **Subir una corrida:** `POST /api/subir.php`, con `Authorization: Bearer wzr_…`, `Content-Type: application/zip`, `X-WizLink-Corrida`
-(`AAAA-MM-DD HH.MM`, el nombre de la carpeta), `X-WizLink-Sha256` y `X-WizLink-Version`. Adentro del .zip:
+(el nombre de la carpeta: `AAAA-MM-DD HH.MM`, o `AAAA-MM-DD HH.MM (2)` si dos corridas empezaron en el mismo minuto),
+`X-WizLink-Sha256` y `X-WizLink-Version`. Adentro del .zip:
 `<corrida>/…` con la carpeta completa y `bitacoras_wizlink/…`. Responde JSON `{"ok", "ya_estaba", "mensaje"}`: 200 guardada
-(o ya estaba igual), 400 o 413 rechazada, 401 llave, 409 la llave espera la confirmación (no se recibe nada; WizLink
+(o «ya estaba», `"ya_estaba": true`, si esa corrida ya estaba guardada, aunque llegue con otra huella: la guardada nunca se
+reemplaza), 400 o 413 rechazada, 401 llave, 409 la llave espera la confirmación (no se recibe nada; WizLink
 la deja pendiente), 422 llegó incompleta, 429 demasiados intentos con una llave equivocada, 500 error del sitio. Del lado de WizLink: `app/nucleo/EnvioRespaldo.cs`. Un cambio aquí tiene que seguir
 sirviéndole a esa versión.
 
@@ -122,9 +129,11 @@ pruebas/correr.sh <zip de una corrida de WizLink> "AAAA-MM-DD HH.MM" [/ruta/de/w
 ```
 
 Comprueba la entrada (el código de alta, la contraseña que no se guarda, el usuario y la contraseña equivocados, el código
-de un solo uso y los dos bloqueos), la llave, cada rechazo de la subida (llave, nombre con trampa, huella, no es .zip,
-`../` adentro, y que muchas llaves equivocadas no bloqueen la correcta), la limpieza de 30 días, lo que no se debe servir
-(`.git`, `lib/`, `pruebas/`, `.md`) y los encabezados de seguridad.
+de un solo uso, los dos bloqueos también con 20 intentos a la vez, que restablecer la contraseña o la app cierre las
+sesiones abiertas y que un `totp.json` dañado detenga la entrada), la llave, cada rechazo de la subida (llave, nombre con
+trampa, huella, no es .zip, `../` adentro, y que muchas llaves equivocadas no bloqueen la correcta), que la misma corrida
+con otra huella no reemplace a la guardada, la corrida «(2)», que una falla al guardar no deje nada a medias, la limpieza
+de 30 días, lo que no se debe servir (`.git`, `lib/`, `pruebas/`, `.md`) y los encabezados de seguridad.
 
 ## Cómo se revisa cada cambio
 Por pull request a `main`, con los chequeos de GitHub (`safety-checks` y `claude-review`) en verde; Iván lo fusiona.

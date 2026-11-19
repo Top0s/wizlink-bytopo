@@ -3,11 +3,15 @@
 //   - Se entra en dos pasos: primero el usuario y la contraseña (lib/acceso.php) y después el código de 6 dígitos de
 //     la app de autenticación (lib/totp.php). Hasta completar los dos, ninguna página muestra corridas.
 //   - La sesión vence a los 30 minutos sin uso y, de todos modos, a las 12 horas.
+//   - Cada sesión guarda la huella del acceso y de la app con que se entró. Si después se borra o se cambia acceso.json
+//     o totp.json (contraseña olvidada, teléfono perdido), todas las sesiones abiertas se cierran en su próximo clic.
 //   - Cada formulario lleva una ficha (CSRF) y además se revisa que venga de este mismo sitio.
 
 declare(strict_types=1);
 
 require_once __DIR__ . '/base.php';
+require_once __DIR__ . '/acceso.php';
+require_once __DIR__ . '/totp.php';
 
 const MINUTOS_SIN_USO = 30;
 const HORAS_MAXIMO = 12;
@@ -33,11 +37,32 @@ function iniciar_sesion(): void
     $ahora = time();
     $vencida = (isset($_SESSION['ultimo']) && $ahora - (int)$_SESSION['ultimo'] > MINUTOS_SIN_USO * 60)
         || (isset($_SESSION['inicio']) && $ahora - (int)$_SESSION['inicio'] > HORAS_MAXIMO * 3600);
-    if ($vencida) {
+    // Cambió el acceso o la app desde que se entró (o es una sesión de antes de esta revisión, sin huella): se cierra
+    $cambio = (!empty($_SESSION['completa']) && !hash_equals(huella_credenciales(), (string)($_SESSION['huella_credenciales'] ?? '')))
+        || (empty($_SESSION['completa']) && !empty($_SESSION['usuario']) && !hash_equals(huella_acceso(), (string)($_SESSION['huella_acceso'] ?? '')));
+    if ($cambio && !empty($_SESSION['completa'])) registrar('sesión cerrada: cambió el acceso o la app de autenticación');
+    if ($vencida || $cambio) {
         $_SESSION = [];
         session_regenerate_id(true);
     }
     $_SESSION['ultimo'] = $ahora;
+}
+
+/** La huella del acceso vigente (usuario y huella de la contraseña), o '' si no hay. Nunca sale de la sesión. */
+function huella_acceso(): string
+{
+    $a = acceso();
+    return $a === null ? '' : hash('sha256', json_encode([$a['usuario'], $a['huella'], (int)($a['creado'] ?? 0)]));
+}
+
+/**
+ * La huella del acceso y de la app de autenticación vigentes. No cambia con cada entrada (el último código usado no
+ * cuenta); sí cambia al borrar o crear de nuevo acceso.json o totp.json.
+ */
+function huella_credenciales(): string
+{
+    $t = totp_alta();
+    return hash('sha256', json_encode([huella_acceso(), $t === null ? '' : $t['secreto'], $t === null ? 0 : (int)($t['alta'] ?? 0)]));
 }
 
 /** La ficha de los formularios de esta sesión. */
@@ -68,6 +93,7 @@ function marcar_clave(string $usuario): void
         'clave_en' => time(),
         'inicio' => time(),
         'ultimo' => time(),
+        'huella_acceso' => huella_acceso(),
     ];
 }
 
@@ -82,12 +108,15 @@ function marcar_completa(): void
 {
     session_regenerate_id(true);
     $_SESSION['completa'] = true;
+    $_SESSION['huella_credenciales'] = huella_credenciales();   // después de guardar totp.json (el alta la crea)
     unset($_SESSION['alta_secreto']);
 }
 
+/** true con los dos pasos hechos y con el mismo acceso y la misma app con que se entró (iniciar_sesion lo revisa). */
 function sesion_completa(): bool
 {
-    return !empty($_SESSION['completa']) && !empty($_SESSION['usuario']);
+    return !empty($_SESSION['completa']) && !empty($_SESSION['usuario'])
+        && hash_equals(huella_credenciales(), (string)($_SESSION['huella_credenciales'] ?? ''));
 }
 
 /** Las páginas con datos: sin los dos pasos, a la entrada. */
