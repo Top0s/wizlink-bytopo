@@ -4,8 +4,10 @@
 //     wizlink-private/corridas/AAAA-MM/, fuera de public_html: desde internet solo se llega a ellas entrando.
 //   - Junto a cada .zip, un .json corto con lo que muestra la lista (resultado, duración, versión, cuántas en REVISAR),
 //     leído del resumen y del control de la corrida al recibirla.
-//   - La llave de subida: el sitio la crea y guarda solo su huella (SHA-256). Solo sirve para subir: no deja ver,
-//     listar ni bajar nada.
+//   - La llave de subida: guarda solo su huella (SHA-256). Solo sirve para subir: no deja ver, listar ni bajar nada.
+//     Llega de dos maneras: la crea WizLink en la máquina virtual y la registra una sola vez con un «código para
+//     WizLink» de un solo uso (Iván, 19-nov: L4; api/registrar.php), o la crea este sitio y Informática la pega a mano.
+//     Hay una sola llave vigente: la última que llegó reemplaza a la anterior.
 //   - Se borran solas las corridas de más de 30 días (dias_guardar en la configuración).
 
 declare(strict_types=1);
@@ -17,6 +19,8 @@ const MAXIMO_DESCOMPRIMIDO = 1024 * 1024 * 1024;    // lo que puede ocupar adent
 const MAXIMO_ARCHIVOS = 65000;
 const MAXIMO_VER = 3 * 1024 * 1024;                 // un archivo más grande solo se baja
 const LLAVE_FORMA = '/^wzr_[A-Za-z0-9_-]{43}$/';
+const CODIGO_FORMA = '/^wzc_[A-Za-z0-9_-]{43}$/';
+const CODIGO_DIAS = 30;                              // un código para WizLink sin usar vence a los 30 días
 
 /** El nombre de la carpeta de una corrida en la PC: «2026-11-19 14.00», o «2026-11-19 14.00 (2)» si hubo dos. */
 function corrida_valida(string $c): bool
@@ -65,11 +69,17 @@ function archivo_llave(): string
     return carpeta('estado') . '/llave.json';
 }
 
-/** Crea una llave nueva (la anterior deja de servir) y la devuelve; solo se guarda su huella. */
+/** 32 bytes al azar en base64url, con su prefijo: «wzr_…» (llave) o «wzc_…» (código para WizLink). */
+function al_azar(string $prefijo): string
+{
+    return $prefijo . rtrim(strtr(base64_encode(random_bytes(32)), '+/', '-_'), '=');
+}
+
+/** Crea una llave para pegar a mano (la anterior deja de servir) y la devuelve; solo se guarda su huella. */
 function llave_nueva(): string
 {
-    $llave = 'wzr_' . rtrim(strtr(base64_encode(random_bytes(32)), '+/', '-_'), '=');
-    escribir_json(archivo_llave(), ['huella' => hash('sha256', $llave), 'creada' => time()]);
+    $llave = al_azar('wzr_');
+    escribir_json(archivo_llave(), ['huella' => hash('sha256', $llave), 'creada' => time(), 'origen' => 'sitio']);
     return $llave;
 }
 
@@ -78,6 +88,94 @@ function llave_creada(): ?int
 {
     $d = leer_json(archivo_llave());
     return ($d !== null && is_string($d['huella'] ?? null)) ? (int)($d['creada'] ?? 0) : null;
+}
+
+/** De dónde vino la llave vigente: 'wizlink' (la registró WizLink con el código) o 'sitio' (creada aquí). */
+function llave_origen(): string
+{
+    $d = leer_json(archivo_llave()) ?? [];
+    return ($d['origen'] ?? 'sitio') === 'wizlink' ? 'wizlink' : 'sitio';
+}
+
+// ------------------------------------------------------------------ el código para WizLink (L4)
+
+function archivo_codigo_wizlink(): string
+{
+    return carpeta('estado') . '/codigo_wizlink.json';
+}
+
+/** Crea un código para WizLink (reemplaza al anterior sin usar) y lo devuelve; solo se guarda su huella. */
+function codigo_wizlink_nuevo(): string
+{
+    $codigo = al_azar('wzc_');
+    escribir_json(archivo_codigo_wizlink(), ['huella' => hash('sha256', $codigo), 'creado' => time(), 'usado' => 0, 'llave' => '']);
+    return $codigo;
+}
+
+/** El código para WizLink guardado ({huella, creado, usado, llave}), o null si no hay. */
+function codigo_wizlink(): ?array
+{
+    $d = leer_json(archivo_codigo_wizlink());
+    return ($d !== null && is_string($d['huella'] ?? null)) ? $d : null;
+}
+
+/** true si el código es el código para WizLink guardado (usado o no). */
+function codigo_coincide(string $codigo): bool
+{
+    if (!preg_match(CODIGO_FORMA, $codigo)) return false;
+    $c = codigo_wizlink();
+    return $c !== null && hash_equals((string)$c['huella'], hash('sha256', $codigo));
+}
+
+/**
+ * WizLink registra su propia llave con el código: 'ok' si quedó registrada, 'ya' si es la misma llave que ya registró
+ * con ese código (un reintento después de un corte), o 'no'. El código sirve una sola vez: después solo acepta a la
+ * misma llave, y si la llave vigente cambió, tampoco.
+ */
+function registrar_llave(string $codigo, string $llave, int $ahora, string $dir): string
+{
+    if (!preg_match(CODIGO_FORMA, $codigo) || !preg_match(LLAVE_FORMA, $llave)) return 'no';
+    $c = codigo_wizlink();
+    if ($c === null || !hash_equals((string)$c['huella'], hash('sha256', $codigo))) return 'no';
+    $huellaLlave = hash('sha256', $llave);
+    if ((int)($c['usado'] ?? 0) > 0) {
+        return hash_equals((string)($c['llave'] ?? ''), $huellaLlave) && llave_correcta($llave) ? 'ya' : 'no';
+    }
+    if ($ahora - (int)($c['creado'] ?? 0) > CODIGO_DIAS * 86400) return 'no';
+    escribir_json(archivo_llave(), ['huella' => $huellaLlave, 'creada' => $ahora, 'origen' => 'wizlink', 'desde' => $dir]);
+    $c['usado'] = $ahora;
+    $c['llave'] = $huellaLlave;
+    escribir_json(archivo_codigo_wizlink(), $c);
+    return 'ok';
+}
+
+// ------------------------------------------------------------------ intentos con una llave o un código equivocados
+
+const FALLOS_POR_HORA = 30;
+
+/** true si en la última hora hubo demasiados intentos equivocados (entonces se responde 429 a los equivocados). */
+function demasiados_fallos(int $ahora): bool
+{
+    $f = array_filter((array)(leer_json(carpeta('estado') . '/subidas_rechazadas.json')['fallos'] ?? []), fn($t) => is_int($t) && $ahora - $t < 3600);
+    return count($f) >= FALLOS_POR_HORA;
+}
+
+function anotar_fallo(int $ahora): void
+{
+    $archivo = carpeta('estado') . '/subidas_rechazadas.json';
+    $f = array_values(array_filter((array)(leer_json($archivo)['fallos'] ?? []), fn($t) => is_int($t) && $ahora - $t < 3600));
+    $f[] = $ahora;
+    try { escribir_json($archivo, ['fallos' => $f]); } catch (Throwable $e) { }
+}
+
+/** La llave que trae el encabezado Authorization: Bearer (también si Apache lo pasa con otro nombre). */
+function llave_de_la_peticion(): string
+{
+    $auth = $_SERVER['HTTP_AUTHORIZATION'] ?? $_SERVER['REDIRECT_HTTP_AUTHORIZATION'] ?? '';
+    if ($auth === '' && function_exists('getallheaders')) {
+        foreach (getallheaders() as $k => $v) if (strcasecmp((string)$k, 'Authorization') === 0) $auth = (string)$v;
+    }
+    return preg_match('/^Bearer\s+(\S+)$/', (string)$auth, $m) ? $m[1] : '';
 }
 
 function llave_correcta(string $llave): bool

@@ -19,8 +19,8 @@ abrir_pagina('', true, 'corridas');
 echo '<h1>Corridas recibidas</h1>';
 
 if (llave_creada() === null) {
-    echo aviso('atencion', '<p><strong>Todavía no hay llave de subida.</strong> WizLink no puede mandar nada hasta que se cree una en '
-        . '<a href="/llave.php">Llave de subida</a> y se guarde en la máquina virtual.</p>');
+    echo aviso('atencion', '<p><strong>Todavía no hay llave de subida.</strong> WizLink no puede mandar nada hasta que use su código '
+        . 'o se pegue una llave en la máquina virtual: <a href="/llave.php">Llave de subida</a>.</p>');
 }
 
 $ultima = $todas[0] ?? null;
