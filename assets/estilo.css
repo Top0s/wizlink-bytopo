@@ -1,0 +1,218 @@
+/* wizlink.bytopo.net · los colores de WizLink (docs/diseno de ZaFi-Online/WizLink), en claro y oscuro. */
+:root {
+  --fondo: #F5F7FA;
+  --tarjeta: #FFFFFF;
+  --texto: #172338;
+  --texto-2: #4A5869;
+  --borde: #D7DFE8;
+  --borde-fuerte: #6B7A8C;
+  --barra: #00214D;
+  --barra-texto: #FFFFFF;
+  --barra-sub: #F5B51B;
+  --primario: #003A7F;
+  --primario-hover: #002F68;
+  --primario-texto: #FFFFFF;
+  --enlace: #0B4FA8;
+  --foco: #2B78C5;
+  --exito-t: #176B45; --exito-f: #E8F5EE; --exito-b: #4E9C74;
+  --atencion-t: #6B4A00; --atencion-f: #FFF4D6; --atencion-b: #B98A1C;
+  --error-t: #A61F2E; --error-f: #FDECEE; --error-b: #D0606C;
+  --neutro-t: #344256; --neutro-f: #EEF1F5; --neutro-b: #8291A3;
+  --info-t: #0B3F80; --info-f: #EAF4FC; --info-b: #5C8FC9;
+  --codigo-f: #F0F3F7;
+  --sombra: 0 1px 2px rgba(0, 33, 77, .08);
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --fondo: #0D1524;
+    --tarjeta: #152035;
+    --texto: #E8EDF4;
+    --texto-2: #B3BFCD;
+    --borde: #2C3B55;
+    --borde-fuerte: #8C9AAD;
+    --barra: #07162E;
+    --barra-texto: #FFFFFF;
+    --barra-sub: #F5B51B;
+    --primario: #7CB2F2;
+    --primario-hover: #9CC5F5;
+    --primario-texto: #0A1628;
+    --enlace: #8FBEF5;
+    --foco: #9CC9FF;
+    --exito-t: #8EDDB3; --exito-f: #0F2E21; --exito-b: #4E9C74;
+    --atencion-t: #F7CD6A; --atencion-f: #33290A; --atencion-b: #B98A1C;
+    --error-t: #FFA3AC; --error-f: #3A1218; --error-b: #D0606C;
+    --neutro-t: #CAD4E0; --neutro-f: #222F44; --neutro-b: #8291A3;
+    --info-t: #A9CDF7; --info-f: #102A47; --info-b: #5C8FC9;
+    --codigo-f: #0F192B;
+    --sombra: none;
+    color-scheme: dark;
+  }
+}
+
+* { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; }
+body {
+  margin: 0;
+  background: var(--fondo);
+  color: var(--texto);
+  font: 16px/1.5 "Segoe UI", system-ui, -apple-system, Roboto, "Helvetica Neue", Arial, sans-serif;
+}
+a { color: var(--enlace); text-underline-offset: 2px; }
+a:focus-visible, button:focus-visible, input:focus-visible, summary:focus-visible, pre:focus-visible {
+  outline: 3px solid var(--foco);
+  outline-offset: 2px;
+}
+code { background: var(--codigo-f); padding: 1px 5px; border-radius: 4px; font-size: .92em; }
+h1 { font-size: 1.6rem; line-height: 1.25; margin: 8px 0 16px; }
+h2 { font-size: 1.15rem; margin: 28px 0 10px; }
+
+.saltar { position: absolute; left: -9999px; top: 8px; background: var(--tarjeta); padding: 8px 12px; z-index: 10; }
+.saltar:focus { left: 8px; }
+.solo-lector { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+
+/* La barra de arriba */
+.barra {
+  background: var(--barra);
+  color: var(--barra-texto);
+  display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px 16px;
+  padding: 10px 20px;
+}
+.marca { display: flex; align-items: center; gap: 10px; color: var(--barra-texto); text-decoration: none; font-weight: 600; font-size: 1.1rem; min-height: 44px; }
+.marca img { border-radius: 8px; }
+.marca-sub { color: var(--barra-sub); font-weight: 600; }
+.menu { display: flex; align-items: center; gap: 4px; flex-wrap: wrap; }
+.menu a, .menu .enlace-boton {
+  color: var(--barra-texto); text-decoration: none; padding: 10px 12px; border-radius: 6px; min-height: 44px;
+  display: inline-flex; align-items: center; font-size: .97rem;
+}
+.menu a[aria-current="page"] { box-shadow: inset 0 -3px 0 var(--barra-sub); font-weight: 600; }
+.menu a:hover, .menu .enlace-boton:hover { background: rgba(255, 255, 255, .12); }
+.menu a:focus-visible, .menu .enlace-boton:focus-visible { outline-color: #FFFFFF; }
+.menu form { margin: 0; }
+
+
+.contenido { max-width: 980px; margin: 0 auto; padding: 16px 20px 40px; }
+.pie { text-align: center; color: var(--texto-2); font-size: .85rem; padding: 16px 20px 28px; }
+
+/* Botones y campos */
+.boton {
+  display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+  background: var(--primario); color: var(--primario-texto); border: 2px solid var(--primario);
+  border-radius: 8px; padding: 10px 18px; min-height: 44px; font: inherit; font-weight: 600;
+  text-decoration: none; cursor: pointer;
+}
+.boton:hover { background: var(--primario-hover); border-color: var(--primario-hover); }
+.boton-secundario { background: var(--tarjeta); color: var(--primario); border-color: var(--primario); }
+.boton-secundario:hover { background: var(--info-f); color: var(--primario); }
+.enlace-boton { background: none; border: 0; font: inherit; color: var(--enlace); text-decoration: underline; cursor: pointer; padding: 8px 0; min-height: 44px; }
+label { display: block; font-weight: 600; margin: 0 0 6px; }
+input[type="text"], input[type="password"], input:not([type]), input[inputmode] {
+  font: inherit; color: var(--texto); background: var(--tarjeta);
+  border: 2px solid var(--borde-fuerte); border-radius: 8px; padding: 10px 12px; min-height: 44px; width: 100%;
+}
+.formulario { display: grid; gap: 12px; max-width: 360px; margin-top: 16px; }
+.campo-codigo { font-size: 1.6rem !important; letter-spacing: .3em; text-align: center; font-variant-numeric: tabular-nums; }
+.casilla { display: flex; align-items: center; gap: 10px; font-weight: 400; min-height: 44px; }
+.casilla input { width: 22px; height: 22px; accent-color: var(--primario); }
+.ayuda { color: var(--texto-2); }
+
+/* Tarjetas y avisos */
+.tarjeta { background: var(--tarjeta); border: 1px solid var(--borde); border-radius: 12px; padding: 24px; box-shadow: var(--sombra); }
+.tarjeta-entrar { max-width: 520px; margin: 24px auto; }
+.aviso { display: flex; gap: 12px; align-items: flex-start; border: 1px solid; border-left-width: 5px; border-radius: 8px; padding: 12px 14px; margin: 14px 0; }
+.aviso p { margin: 0 0 6px; } .aviso p:last-child { margin: 0; }
+.aviso-simbolo { flex: none; width: 24px; height: 24px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; font-weight: 700; font-size: .9rem; color: var(--tarjeta); }
+.aviso-error { background: var(--error-f); border-color: var(--error-b); color: var(--error-t); } .aviso-error .aviso-simbolo { background: var(--error-t); }
+.aviso-atencion { background: var(--atencion-f); border-color: var(--atencion-b); color: var(--atencion-t); } .aviso-atencion .aviso-simbolo { background: var(--atencion-t); }
+.aviso-exito { background: var(--exito-f); border-color: var(--exito-b); color: var(--exito-t); } .aviso-exito .aviso-simbolo { background: var(--exito-t); }
+.aviso-info { background: var(--info-f); border-color: var(--info-b); color: var(--info-t); } .aviso-info .aviso-simbolo { background: var(--info-t); }
+.aviso a { color: inherit; font-weight: 600; }
+
+/* Entrada */
+.codigo-alta { font-family: Consolas, "Courier New", monospace; text-transform: uppercase; letter-spacing: .08em; }
+.pasos { padding-left: 22px; } .pasos li { margin: 0 0 14px; }
+.qr { background: #FFFFFF; border: 1px solid var(--borde); border-radius: 8px; padding: 12px; width: 232px; height: 232px; margin: 10px 0; }
+.qr svg { display: block; width: 100%; height: 100%; }
+.manual summary { cursor: pointer; color: var(--enlace); min-height: 44px; display: flex; align-items: center; }
+.clave { font-family: Consolas, "Courier New", monospace; font-size: 1.05rem; letter-spacing: .05em; background: var(--codigo-f); padding: 8px 10px; border-radius: 6px; word-break: break-all; }
+.otra-cuenta { margin-top: 12px; }
+
+/* Lista de corridas */
+.resumen { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin: 0 0 18px; }
+.dato { background: var(--tarjeta); border: 1px solid var(--borde); border-radius: 10px; padding: 12px 14px; box-shadow: var(--sombra); }
+.dato-titulo { display: block; color: var(--texto-2); font-size: .85rem; }
+.dato-valor { display: block; font-weight: 600; font-size: 1.05rem; }
+.filtro { display: flex; gap: 8px; flex-wrap: wrap; margin: 0 0 8px; }
+.filtro-opcion {
+  border: 2px solid var(--borde-fuerte); border-radius: 999px; padding: 8px 14px; min-height: 44px;
+  display: inline-flex; align-items: center; text-decoration: none; color: var(--texto); background: var(--tarjeta);
+}
+.filtro-opcion[aria-current="true"] { background: var(--primario); border-color: var(--primario); color: var(--primario-texto); font-weight: 600; }
+.vacio { color: var(--texto-2); padding: 24px 0; }
+.dia h2 { font-size: 1rem; color: var(--texto-2); text-transform: none; margin: 22px 0 8px; }
+.corridas { list-style: none; margin: 0; padding: 0; background: var(--tarjeta); border: 1px solid var(--borde); border-radius: 10px; box-shadow: var(--sombra); overflow: hidden; }
+.corrida + .corrida { border-top: 1px solid var(--borde); }
+.corrida-enlace {
+  display: grid; grid-template-columns: 7.5rem auto 1fr auto; align-items: center; gap: 6px 14px;
+  padding: 12px 16px; min-height: 56px; color: var(--texto); text-decoration: none;
+}
+.corrida-enlace:hover { background: var(--info-f); }
+.corrida-hora { font-weight: 600; font-variant-numeric: tabular-nums; }
+.corrida-extra { color: var(--texto-2); font-size: .92rem; }
+.corrida-ir { color: var(--texto-2); font-size: 1.4rem; }
+
+.chip { display: inline-flex; align-items: center; border: 1px solid; border-radius: 999px; padding: 2px 10px; font-size: .88rem; font-weight: 600; white-space: nowrap; }
+.simbolo { margin-right: 5px; }
+.chip-exito { color: var(--exito-t); background: var(--exito-f); border-color: var(--exito-b); }
+.chip-atencion { color: var(--atencion-t); background: var(--atencion-f); border-color: var(--atencion-b); }
+.chip-error { color: var(--error-t); background: var(--error-f); border-color: var(--error-b); }
+.chip-neutro { color: var(--neutro-t); background: var(--neutro-f); border-color: var(--neutro-b); }
+
+/* Una corrida */
+.migas { margin: 4px 0 0; }
+.cabecera-corrida { margin: -6px 0 8px; }
+.ficha { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 10px; margin: 14px 0 18px; }
+.ficha div { background: var(--tarjeta); border: 1px solid var(--borde); border-radius: 10px; padding: 10px 14px; }
+.ficha dt { color: var(--texto-2); font-size: .85rem; } .ficha dd { margin: 0; font-weight: 600; }
+.accesos { list-style: none; padding: 0; margin: 0; display: flex; flex-wrap: wrap; gap: 10px; }
+.acceso {
+  display: inline-flex; align-items: center; gap: 8px; min-height: 44px; padding: 8px 14px;
+  border: 2px solid var(--primario); border-radius: 8px; text-decoration: none; color: var(--primario); font-weight: 600; background: var(--tarjeta);
+}
+.acceso:hover { background: var(--info-f); }
+.acceso-tam { color: var(--texto-2); font-weight: 400; font-size: .85rem; }
+.carpeta { background: var(--tarjeta); border: 1px solid var(--borde); border-radius: 10px; margin: 0 0 10px; }
+.carpeta summary { cursor: pointer; padding: 10px 14px; min-height: 44px; font-weight: 600; word-break: break-all; }
+.carpeta-cuenta { color: var(--texto-2); font-weight: 400; font-size: .88rem; margin-left: 6px; }
+.archivos { list-style: none; margin: 0; padding: 0 0 6px; }
+.archivos li { display: grid; grid-template-columns: 1fr 5.5rem 3rem 3.5rem; gap: 8px; align-items: center; padding: 4px 14px; border-top: 1px solid var(--borde); }
+.archivos a { min-height: 32px; display: inline-flex; align-items: center; }
+.archivo-nombre { word-break: break-all; font-size: .93rem; }
+.archivo-tam { color: var(--texto-2); font-size: .85rem; text-align: right; }
+
+/* Un archivo */
+.titulo-archivo { word-break: break-all; }
+.texto {
+  background: var(--tarjeta); color: var(--texto); border: 1px solid var(--borde); border-radius: 10px;
+  padding: 14px; overflow: auto; font: 13px/1.45 Consolas, "Courier New", monospace; white-space: pre; max-height: 75vh;
+}
+
+/* La llave */
+.llave-nueva { display: grid; gap: 10px; max-width: 640px; margin: 10px 0 8px; }
+.llave { font-family: Consolas, "Courier New", monospace !important; }
+
+@media (max-width: 700px) {
+  .barra { padding: 8px 12px; }
+  .contenido { padding: 12px 14px 32px; }
+  .resumen { grid-template-columns: repeat(2, 1fr); }
+  .corrida-enlace { grid-template-columns: 1fr auto; }
+  .corrida-hora { grid-column: 1; }
+  .corrida-enlace .chip { grid-column: 1; justify-self: start; }
+  .corrida-extra { grid-column: 1; }
+  .corrida-ir { grid-column: 2; grid-row: 1 / span 3; }
+  .archivos li { grid-template-columns: 1fr auto auto; }
+  .archivo-tam { display: none; }
+  .tarjeta { padding: 18px; }
+}
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }
