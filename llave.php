@@ -3,7 +3,8 @@
 //   1. «Código para WizLink» (Iván, 19-nov: L4; la recomendada, sin nadie en la máquina virtual): el sitio crea un código
 //      de un solo uso y lo muestra una vez. Se guarda como secreto WIZLINK_RESPALDO_CODIGO en GitHub (ZaFi-Online/WizLink,
 //      entorno «publicacion») y la próxima versión de WizLink lo trae. En su primer respaldo, WizLink crea su propia llave,
-//      la guarda cifrada en la máquina virtual y la registra aquí con el código (api/registrar.php), que se quema.
+//      la guarda cifrada en la máquina virtual y la registra aquí con el código (api/registrar.php). Esa llave espera
+//      la confirmación de Iván en esta página (Iván, 19-nov: S1): solo al confirmarla sirve y el código se quema.
 //   2. «Llave para pegar a mano»: el sitio la crea y la muestra una vez; Informática la pega en WizLink (Opciones de
 //      Informática › «Guardar Llave del respaldo»).
 // El sitio guarda solo huellas (SHA-256): ni la llave ni el código se pueden volver a mostrar. Hay una sola llave
@@ -20,6 +21,7 @@ exigir_sesion();
 $nuevaLlave = null;
 $nuevoCodigo = null;
 $error = '';
+$hecho = '';
 if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
     $que = (string)($_POST['que'] ?? '');
     if (!peticion_valida($_POST['ficha'] ?? null)) {
@@ -32,6 +34,26 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
             $nuevoCodigo = codigo_wizlink_nuevo();
             registrar('código para WizLink nuevo creado');
         }
+    } elseif ($que === 'confirmar' || $que === 'rechazar') {
+        $id = (string)($_POST['id'] ?? '');
+        if ($que === 'confirmar' && llave_creada() !== null && ($_POST['confirmo'] ?? '') !== 'si') {
+            $error = 'Para reemplazar la llave vigente, marque la casilla de confirmación.';
+        } else {
+            try {
+                $e = con_candado(fn() => $que === 'confirmar' ? confirmar_llave($id, time()) : rechazar_llave($id));
+            } catch (Throwable $t) {
+                $e = false;
+                $error = 'El sitio está ocupado. Vuelva a intentarlo en un momento.';
+            }
+            if ($e === false) {
+                // ya dice el motivo
+            } elseif ($e === null) {
+                $error = 'Esa llave ya no espera confirmación. Revise la lista otra vez.';
+            } else {
+                $hecho = $que === 'confirmar' ? 'confirmada' : 'rechazada';
+                registrar('llave de WizLink ' . $hecho . ' (llegó desde ' . ($e['desde'] ?? '?') . ')');
+            }
+        }
     } elseif ($que === 'llave') {
         if (llave_creada() !== null && ($_POST['confirmo'] ?? '') !== 'si') {
             $error = 'Para reemplazar la llave vigente, marque la casilla de confirmación.';
@@ -43,25 +65,63 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
 }
 $creada = llave_creada();
 $codigo = codigo_wizlink();
+$esperando = llaves_esperando();
+$vigente = leer_json(archivo_llave()) ?? [];
 
 abrir_pagina('Llave de subida', true, 'llave');
 echo '<h1>Llave de subida</h1>
 <p class="ayuda">Es la llave con la que WizLink sube cada corrida a este sitio. Solo sirve para subir: no deja ver ni bajar nada.</p>';
 if ($error !== '') echo aviso('error', '<p>' . h($error) . '</p>');
+if ($hecho === 'confirmada') echo aviso('exito', '<p><strong>Llave confirmada.</strong> WizLink ya puede subir; las corridas que esperaban llegan con la próxima.</p>');
+if ($hecho === 'rechazada') echo aviso('info', '<p><strong>Llave rechazada.</strong> Esa llave no podrá subir nada. El código sigue sirviendo para la máquina virtual.</p>');
+
+// ---------------------------------------------------------------- las que esperan confirmación (S1)
+if (count($esperando) > 0) {
+    echo '<h2>Esperando confirmación</h2>
+<p class="ayuda">WizLink registró su llave con el código. Confírmela solo si la dirección y la corrida son de la máquina virtual de Informática. Mientras espera, las corridas quedan pendientes en WizLink y llegan al confirmarla (hasta 7 días).</p>';
+    foreach ($esperando as $e) {
+        $intentos = (int)($e['intentos'] ?? 0);
+        $intento = $intentos === 0
+            ? 'Todavía ninguna'
+            : ($intentos === 1 ? '1 vez' : $intentos . ' veces') . '. La última: <strong>' . h((string)$e['ultima']) . '</strong>'
+                . ((string)($e['version'] ?? '') !== '' ? ', con WizLink ' . h((string)$e['version']) : '') . ' (' . h(fecha_hora((int)$e['ultimo_intento'])) . ')';
+        echo '<div class="tarjeta tarjeta-espera">
+  <p class="espera-titulo"><span class="chip chip-atencion"><span aria-hidden="true">⏳</span> Espera confirmación</span></p>
+  <dl class="espera-datos">
+    <dt>Llegó</dt><dd>' . h(fecha_hora((int)$e['llego'])) . '</dd>
+    <dt>Desde la dirección</dt><dd><strong>' . h((string)($e['desde'] ?? '?')) . '</strong></dd>
+    <dt>Intentó subir</dt><dd>' . $intento . '</dd>
+  </dl>
+  <form method="post" class="formulario formulario-espera">
+    <input type="hidden" name="ficha" value="' . h(ficha()) . '">
+    <input type="hidden" name="id" value="' . h((string)$e['id']) . '">'
+        . ($creada !== null ? '<label class="casilla"><input type="checkbox" name="confirmo" value="si"> Reemplazar la llave vigente al confirmar</label>' : '') . '
+    <div class="botones">
+      <button type="submit" class="boton" name="que" value="confirmar">Confirmar esta llave</button>
+      <button type="submit" class="boton boton-secundario" name="que" value="rechazar">Rechazar</button>
+    </div>
+  </form>
+</div>';
+    }
+}
 
 // ---------------------------------------------------------------- la llave vigente
 echo '<h2>Llave vigente</h2>';
 if ($creada === null) {
     echo '<p>Todavía no hay ninguna. Llega cuando WizLink use su código, o cuando se cree una para pegar a mano.</p>';
 } elseif (llave_origen() === 'wizlink') {
-    echo aviso('exito', '<p><strong>Registrada por WizLink</strong> el ' . h(fecha_hora($creada)) . ', con el código para WizLink.</p>');
+    // fecha_hora termina en «a. m.» o «p. m.»: la frase no lleva otro punto después
+    echo aviso('exito', '<p><strong>Registrada por WizLink</strong> con el código para WizLink'
+        . ((string)($vigente['desde'] ?? '') !== '' ? ', desde la dirección ' . h((string)$vigente['desde']) : '')
+        . ', el ' . h(fecha_hora($creada))
+        . (isset($vigente['confirmada']) ? ', y confirmada el ' . h(fecha_hora((int)$vigente['confirmada'])) : '') . '</p>');
 } else {
     echo '<p>Creada aquí para pegar a mano, el <strong>' . h(fecha_hora($creada)) . '</strong>; no se puede volver a mostrar.</p>';
 }
 
 // ---------------------------------------------------------------- el código para WizLink
 echo '<h2>Código para WizLink <span class="etiqueta-recomendado">Recomendado</span></h2>
-<p class="ayuda">Sin nadie en la máquina virtual: el código viaja dentro de la próxima versión de WizLink, que crea su propia llave y la registra aquí una sola vez.</p>';
+<p class="ayuda">Sin nadie en la máquina virtual: el código viaja dentro de la próxima versión de WizLink, que crea su propia llave y la registra aquí. Esa llave sirve cuando usted la confirma.</p>';
 if ($nuevoCodigo !== null) {
     echo aviso('exito', '<p><strong>Código creado.</strong> Se muestra solo esta vez: cópielo ahora. Vence en ' . CODIGO_DIAS . ' días si no se usa.</p>') . '
 <div class="llave-nueva">
@@ -73,13 +133,15 @@ if ($nuevoCodigo !== null) {
 <ol class="pasos">
   <li>En GitHub, <strong>ZaFi-Online/WizLink</strong> › <strong>Settings</strong> › <strong>Environments</strong> › <strong>publicacion</strong>.</li>
   <li>En <strong>Environment secrets</strong>: <strong>Add environment secret</strong>, nombre <code>WIZLINK_RESPALDO_CODIGO</code>, pegar el código y <strong>Add secret</strong>.</li>
-  <li>La próxima versión de WizLink lo trae. En su primer respaldo, la llave vigente aparece aquí como «Registrada por WizLink».</li>
+  <li>La próxima versión de WizLink lo trae. En su primer respaldo, su llave aparece aquí, en «Esperando confirmación»: revise la dirección y la corrida, y confírmela.</li>
 </ol>';
 } else {
     if ($codigo !== null && (int)($codigo['usado'] ?? 0) > 0) {
-        echo '<p>El último código lo usó WizLink: <strong>' . h(fecha_hora((int)$codigo['usado'])) . '</strong></p>';
+        echo '<p>El último código ya se usó: la llave de WizLink quedó confirmada el <strong>' . h(fecha_hora((int)$codigo['usado'])) . '</strong></p>';
     } elseif ($codigo !== null && time() - (int)($codigo['creado'] ?? 0) > CODIGO_DIAS * 86400) {
         echo aviso('atencion', '<p>El código creado el ' . h(fecha_hora((int)$codigo['creado'])) . ' venció sin que WizLink lo usara.</p>');
+    } elseif ($codigo !== null && count($esperando) > 0) {
+        echo '<p>El código creado el <strong>' . h(fecha_hora((int)$codigo['creado'])) . '</strong> ya registró ' . (count($esperando) === 1 ? 'una llave, que espera' : count($esperando) . ' llaves, que esperan') . ' su confirmación arriba.</p>';
     } elseif ($codigo !== null) {
         echo aviso('info', '<p>Hay un código creado el <strong>' . h(fecha_hora((int)$codigo['creado'])) . '</strong>, esperando a WizLink.</p>');
     }

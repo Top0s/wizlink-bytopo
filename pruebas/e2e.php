@@ -27,6 +27,7 @@ function pedir(string $metodo, string $ruta, array $op = []): array
         CURLOPT_HTTPHEADER => $cab,
     ]);
     if (!($op['sin_cookies'] ?? false)) { curl_setopt($ch, CURLOPT_COOKIEJAR, $tarro); curl_setopt($ch, CURLOPT_COOKIEFILE, $tarro); }
+    if (isset($op['desde'])) curl_setopt($ch, CURLOPT_INTERFACE, $op['desde']);   // otra dirección de esta misma computadora (127.0.0.x)
     if (isset($op['cuerpo'])) curl_setopt($ch, CURLOPT_POSTFIELDS, $op['cuerpo']);
     $r = curl_exec($ch);
     $codigo = (int)curl_getinfo($ch, CURLINFO_RESPONSE_CODE);
@@ -34,6 +35,8 @@ function pedir(string $metodo, string $ruta, array $op = []): array
     curl_close($ch);
     return ['codigo' => $codigo, 'cab' => substr((string)$r, 0, $tc), 'cuerpo' => substr((string)$r, $tc)];
 }
+
+function h_e2e(string $s): string { return htmlspecialchars($s, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8'); }
 
 function atributo(string $html, string $id, string $attr): string
 {
@@ -176,22 +179,76 @@ $r = pedir('POST', '/llave.php', ['cuerpo' => http_build_query(['ficha' => ficha
 ok(str_contains($r['cuerpo'], 'Ya hay un código para WizLink sin usar'), 'código para WizLink: reemplazar uno sin usar pide confirmar');
 $propia = 'wzr_' . str_repeat('P', 40) . '-_1';
 $otra = 'wzr_' . str_repeat('Q', 40) . '-_2';
-$registrar = function (string $llaveR, string $codigoR) {
-    return pedir('POST', '/api/registrar.php', ['sin_cookies' => true, 'cabeceras' => ['Authorization: Bearer ' . $llaveR, 'X-WizLink-Codigo: ' . $codigoR], 'cuerpo' => '']);
+$registrar = function (string $llaveR, string $codigoR, string $desde = '127.0.0.1') {
+    return pedir('POST', '/api/registrar.php', ['sin_cookies' => true, 'desde' => $desde, 'cabeceras' => ['Authorization: Bearer ' . $llaveR, 'X-WizLink-Codigo: ' . $codigoR], 'cuerpo' => '']);
 };
+$esperando = fn() => (array)(json_decode((string)@file_get_contents($privado . '/estado/llaves_esperando.json'), true)['llaves'] ?? []);
+$fallosAnotados = fn() => count((array)(json_decode((string)@file_get_contents($privado . '/estado/subidas_rechazadas.json'), true)['fallos'] ?? []));
 ok(pedir('GET', '/api/registrar.php', ['sin_cookies' => true])['codigo'] === 405, 'registrar: GET no');
 ok(in_array($registrar($propia, 'wzc_' . str_repeat('Z', 43))['codigo'], [401, 429], true), 'registrar: un código equivocado no sirve');
 ok(in_array($registrar($propia, '')['codigo'], [401, 429], true), 'registrar: sin código no sirve');
 ok($registrar('corta', $codigo)['codigo'] === 401, 'registrar: una llave con otra forma no sirve');
+
+// S1: la llave registrada espera la confirmación de Iván
 $r = $registrar($propia, $codigo);
-ok($r['codigo'] === 200 && str_contains($r['cuerpo'], '"ya_estaba":false'), "registrar: WizLink registra su llave con el código ({$r['codigo']} {$r['cuerpo']})");
+ok($r['codigo'] === 200 && str_contains($r['cuerpo'], '"ya_estaba":false') && str_contains($r['cuerpo'], '"pendiente":true'),
+   "registrar: la llave de WizLink queda esperando confirmación ({$r['codigo']} {$r['cuerpo']})");
 $r = $registrar($propia, $codigo);
-ok($r['codigo'] === 200 && str_contains($r['cuerpo'], '"ya_estaba":true'), 'registrar: el mismo reintento (después de un corte) ya estaba');
-ok($registrar($otra, $codigo)['codigo'] === 401, 'registrar: el código ya usado no sirve para otra llave');
-ok($subir(array_merge(['Authorization: Bearer ' . $propia], array_slice($cabBuena, 1)), $datos)['codigo'] === 200, 'subir: con la llave registrada por WizLink');
+ok($r['codigo'] === 200 && str_contains($r['cuerpo'], '"ya_estaba":true') && str_contains($r['cuerpo'], '"pendiente":true'), 'registrar: el mismo reintento ya estaba, y sigue esperando');
+$cabPropia = array_merge(['Authorization: Bearer ' . $propia], array_slice($cabBuena, 1));
+$antes = $fallosAnotados();
+$r = $subir($cabPropia, $datos);
+ok($r['codigo'] === 409 && str_contains($r['cuerpo'], '"pendiente":true'), "subir: una llave que espera no sube nada (409) ({$r['codigo']})");
+ok($fallosAnotados() === $antes, 'subir: una llave que espera no cuenta como intento equivocado');
+$e = $esperando();
+ok(count($e) === 1 && (int)$e[0]['intentos'] === 1 && $e[0]['ultima'] === $corrida && $e[0]['desde'] === '127.0.0.1', 'subir: se anota el intento (la corrida y la dirección)');
+ok(!str_contains(json_encode($e), $propia), 'la lista de las que esperan guarda solo la huella');
+ok(in_array($subir($cabBuena, $datos)['codigo'], [200], true), 'subir: la llave vigente sigue sirviendo mientras otra espera');
+
+// Otra dirección (alguien que sacó el código del programa): espera aparte; una por dirección; como máximo 10
+ok(str_contains($registrar($otra, $codigo, '127.0.0.2')['cuerpo'], '"pendiente":true'), 'registrar: desde otra dirección también espera');
+$otra2 = 'wzr_' . str_repeat('R', 40) . '-_3';
+ok(str_contains($registrar($otra2, $codigo, '127.0.0.2')['cuerpo'], '"pendiente":true'), 'registrar: otra llave desde la misma dirección');
+$e = $esperando();
+ok(count($e) === 2 && in_array(hash('sha256', $otra2), array_column($e, 'huella'), true) && !in_array(hash('sha256', $otra), array_column($e, 'huella'), true),
+   'registrar: una sola por dirección (la más nueva reemplaza a la anterior)');
+for ($i = 3; $i <= 10; $i++) $registrar('wzr_' . str_repeat('S', 40) . sprintf('-%02d', $i), $codigo, '127.0.0.' . $i);
+ok(count($esperando()) === 10, 'registrar: hasta 10 esperando');
+$r = $registrar('wzr_' . str_repeat('T', 40) . '-11', $codigo, '127.0.0.11');
+ok($r['codigo'] === 429 && count($esperando()) === 10, "registrar: con 10 esperando, la siguiente no entra (429) ({$r['codigo']})");
+ok($registrar($propia, $codigo)['codigo'] === 200, 'registrar: con la lista llena, la que ya espera sigue recibiendo «ya estaba»');
+
+// Lo que ve Iván
+$l = pedir('GET', '/');
+ok(str_contains($l['cuerpo'], 'llaves de WizLink esperan') && str_contains($l['cuerpo'], 'su confirmación'), 'Corridas avisa que hay llaves esperando');
+$pl = pedir('GET', '/llave.php');
+ok(str_contains($pl['cuerpo'], 'Esperando confirmación') && substr_count($pl['cuerpo'], 'Confirmar esta llave') === 10, 'Llave de subida muestra las 10 que esperan');
+ok(str_contains($pl['cuerpo'], '127.0.0.2') && str_contains($pl['cuerpo'], h_e2e($corrida)) && str_contains($pl['cuerpo'], 'Intentó subir'), 'cada una con su dirección y la corrida que intentó subir');
+ok(!str_contains($pl['cuerpo'], $propia) && !str_contains($pl['cuerpo'], $otra2) && !str_contains($pl['cuerpo'], $codigo), 'la página nunca muestra las llaves ni el código');
+$id = fn(string $desde) => (string)(array_values(array_filter($esperando(), fn($x) => $x['desde'] === $desde))[0]['id'] ?? '');
+$accion = fn(string $que, string $idX, array $mas = []) => pedir('POST', '/llave.php', ['cuerpo' => http_build_query(array_merge(['ficha' => ficha_de(pedir('GET', '/llave.php')['cuerpo']), 'que' => $que, 'id' => $idX], $mas)), 'cabeceras' => $origen]);
+$sinFicha = pedir('POST', '/llave.php', ['cuerpo' => http_build_query(['que' => 'confirmar', 'id' => $id('127.0.0.2')]), 'cabeceras' => $origen]);
+ok(count($esperando()) === 10 && str_contains($sinFicha['cuerpo'], 'venció'), 'confirmar: sin la ficha de la página no se hace nada');
+$r = $accion('rechazar', $id('127.0.0.2'));
+ok(str_contains($r['cuerpo'], 'Llave rechazada') && count($esperando()) === 9, 'rechazar: la de otra dirección sale de la lista');
+ok($subir(array_merge(['Authorization: Bearer ' . $otra2], array_slice($cabBuena, 1)), $datos)['codigo'] !== 409, 'rechazar: la rechazada ya no espera');
+ok(str_contains($accion('rechazar', 'noexiste')['cuerpo'], 'ya no espera confirmación'), 'rechazar: una que no está dice que ya no espera');
+$r = $accion('confirmar', $id('127.0.0.1'));
+ok(str_contains($r['cuerpo'], 'marque la casilla') && count($esperando()) === 9, 'confirmar: si hay una llave vigente, pide la casilla para reemplazarla');
+$r = $accion('confirmar', $id('127.0.0.1'), ['confirmo' => 'si']);
+ok(str_contains($r['cuerpo'], 'Llave confirmada'), 'confirmar: la de la máquina virtual queda confirmada');
+ok(count($esperando()) === 0 || !str_contains((string)@file_get_contents($privado . '/estado/llaves_esperando.json'), '127.0.0.3'), 'confirmar: las demás que esperaban se descartan');
+
+// Después de confirmar
+ok($subir($cabPropia, $datos)['codigo'] === 200, 'subir: con la llave confirmada');
+$r = $registrar($propia, $codigo);
+ok($r['codigo'] === 200 && str_contains($r['cuerpo'], '"ya_estaba":true') && str_contains($r['cuerpo'], '"pendiente":false'), 'registrar: después de confirmar, la misma llave ya estaba');
+ok($registrar($otra, $codigo, '127.0.0.2')['codigo'] === 401, 'registrar: el código ya usado no sirve para otra llave');
+ok(in_array($subir(array_merge(['Authorization: Bearer ' . 'wzr_' . str_repeat('S', 40) . '-03'], array_slice($cabBuena, 1)), $datos)['codigo'], [401, 429], true), 'subir: una que esperaba y se descartó no sirve');
 ok(in_array($subir($cabBuena, $datos)['codigo'], [401, 429], true), 'subir: la llave para pegar a mano anterior ya no sirve (401, o 429 después de tantas equivocadas)');
 $pl = pedir('GET', '/llave.php');
-ok(str_contains($pl['cuerpo'], 'Registrada por WizLink') && str_contains($pl['cuerpo'], 'lo usó WizLink'), 'la página dice que la llave la registró WizLink');
+ok(str_contains($pl['cuerpo'], 'Registrada por WizLink') && str_contains($pl['cuerpo'], 'y confirmada el') && str_contains($pl['cuerpo'], 'ya se usó'), 'la página dice que la llave la registró WizLink y quedó confirmada');
+ok(!str_contains($pl['cuerpo'], 'Esperando confirmación') && !str_contains(pedir('GET', '/')['cuerpo'], 'esperan su confirmación'), 'ya no hay avisos de llaves esperando');
 ok(!str_contains($pl['cuerpo'], $propia) && !str_contains($pl['cuerpo'], $codigo), 'la página nunca muestra la llave ni el código usados');
 ok(!str_contains((string)@file_get_contents($privado . '/estado/llave.json'), $propia), 'el sitio guarda solo la huella de la llave de WizLink');
 $cabBuena[0] = 'Authorization: Bearer ' . $propia;   // lo que sigue sube con la llave de WizLink

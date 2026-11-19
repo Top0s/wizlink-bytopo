@@ -9,7 +9,8 @@
 //   X-WizLink-Version: Beta 3.1 (1.0.10)   la versión de WizLink (solo para mostrarla)
 //
 // Lo que responde (JSON): {"ok": true, "ya_estaba": false, "mensaje": "…"} con 200; 400 si el .zip o los datos no
-// sirven (no se reintenta), 401 si la llave no sirve, 405 si no es POST, 413 si pesa demasiado, 422 si llegó cortada,
+// sirven (no se reintenta), 401 si la llave no sirve, 405 si no es POST, 409 si la llave espera la confirmación de Iván
+// (Iván, 19-nov: S1; WizLink la deja pendiente y la reenvía), 413 si pesa demasiado, 422 si llegó cortada,
 // 429 si hubo muchos intentos con una llave equivocada en la última hora (una llave correcta entra siempre), y 500 si
 // algo falló aquí (WizLink lo reintenta después).
 //
@@ -32,6 +33,15 @@ $ahora = time();
 // La llave primero: una llave correcta siempre entra. El tope de intentos solo frena a las equivocadas (con 256 bits,
 // adivinarla es imposible; el tope evita que alguien llene la bitácora), y así nadie puede bloquear las subidas buenas.
 $llave = llave_de_la_peticion();
+if (!llave_correcta($llave) && llave_esperando($llave) !== null) {
+    // La llave que registró WizLink todavía espera la confirmación: no se recibe nada, pero se anota el intento (la
+    // corrida y la versión) para que Iván vea de dónde viene antes de confirmarla. No cuenta como un intento equivocado.
+    $corrida = trim((string)($_SERVER['HTTP_X_WIZLINK_CORRIDA'] ?? ''));
+    $version = mb_substr(preg_replace('/[^\p{L}\p{N} .,()_\-]/u', '', trim((string)($_SERVER['HTTP_X_WIZLINK_VERSION'] ?? ''))) ?? '', 0, 60);
+    try { con_candado(fn() => anotar_intento($llave, $corrida, $version, $ahora)); } catch (Throwable $e) { }
+    responder_json(409, ['ok' => false, 'pendiente' => true,
+        'mensaje' => 'La llave de esta PC espera la confirmación en wizlink.bytopo.net › Llave de subida.']);
+}
 if (!llave_correcta($llave)) {
     if (demasiados_fallos($ahora)) {
         header('Retry-After: 3600');

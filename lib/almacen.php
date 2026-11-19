@@ -7,7 +7,8 @@
 //   - La llave de subida: guarda solo su huella (SHA-256). Solo sirve para subir: no deja ver, listar ni bajar nada.
 //     Llega de dos maneras: la crea WizLink en la máquina virtual y la registra una sola vez con un «código para
 //     WizLink» de un solo uso (Iván, 19-nov: L4; api/registrar.php), o la crea este sitio y Informática la pega a mano.
-//     Hay una sola llave vigente: la última que llegó reemplaza a la anterior.
+//     Hay una sola llave vigente: la última que llegó reemplaza a la anterior. La que registra WizLink espera la
+//     confirmación de Iván antes de servir (Iván, 19-nov: S1).
 //   - Se borran solas las corridas de más de 30 días (dias_guardar en la configuración).
 
 declare(strict_types=1);
@@ -128,9 +129,12 @@ function codigo_coincide(string $codigo): bool
 }
 
 /**
- * WizLink registra su propia llave con el código: 'ok' si quedó registrada, 'ya' si es la misma llave que ya registró
- * con ese código (un reintento después de un corte), o 'no'. El código sirve una sola vez: después solo acepta a la
- * misma llave, y si la llave vigente cambió, tampoco.
+ * WizLink registra su propia llave con el código (Iván, 19-nov: S1). La llave no sirve todavía: queda «esperando
+ * confirmación» hasta que Iván la confirma en Llave de subida. Así, si alguien sacara el código del programa publicado
+ * (el portal de las actualizaciones se baja sin contraseña), no podría subir nada ni dejar afuera a la máquina virtual.
+ * Devuelve 'espera' si quedó esperando, 'ya' si esa misma llave ya estaba (esperando o confirmada con este código; un
+ * reintento después de un corte), 'lleno' si ya hay ESPERANDO_MAXIMO llaves esperando, o 'no'. Cada dirección tiene
+ * una sola llave esperando: la más nueva reemplaza a la anterior de esa dirección. Se llama con el candado tomado.
  */
 function registrar_llave(string $codigo, string $llave, int $ahora, string $dir): string
 {
@@ -142,11 +146,113 @@ function registrar_llave(string $codigo, string $llave, int $ahora, string $dir)
         return hash_equals((string)($c['llave'] ?? ''), $huellaLlave) && llave_correcta($llave) ? 'ya' : 'no';
     }
     if ($ahora - (int)($c['creado'] ?? 0) > CODIGO_DIAS * 86400) return 'no';
-    escribir_json(archivo_llave(), ['huella' => $huellaLlave, 'creada' => $ahora, 'origen' => 'wizlink', 'desde' => $dir]);
-    $c['usado'] = $ahora;
-    $c['llave'] = $huellaLlave;
-    escribir_json(archivo_codigo_wizlink(), $c);
-    return 'ok';
+    $esperando = llaves_esperando();
+    foreach ($esperando as $e) if (hash_equals((string)$e['huella'], $huellaLlave)) return 'ya';
+    $esperando = array_values(array_filter($esperando, fn($e) => ($e['desde'] ?? '') !== $dir));
+    if (count($esperando) >= ESPERANDO_MAXIMO) return 'lleno';
+    $esperando[] = ['id' => bin2hex(random_bytes(6)), 'huella' => $huellaLlave, 'codigo' => (string)$c['huella'], 'llego' => $ahora,
+                    'desde' => $dir, 'intentos' => 0, 'ultima' => '', 'version' => '', 'ultimo_intento' => 0];
+    guardar_esperando($esperando);
+    return 'espera';
+}
+
+// ------------------------------------------------------------------ llaves que esperan confirmación (Iván, 19-nov: S1)
+
+const ESPERANDO_MAXIMO = 10;
+
+function archivo_esperando(): string
+{
+    return carpeta('estado') . '/llaves_esperando.json';
+}
+
+/**
+ * Las llaves que WizLink registró con el código vigente y esperan la confirmación de Iván, la más vieja primero. Las de
+ * un código anterior, ya usado o vencido no cuentan.
+ */
+function llaves_esperando(): array
+{
+    $c = codigo_wizlink();
+    if ($c === null || (int)($c['usado'] ?? 0) > 0 || time() - (int)($c['creado'] ?? 0) > CODIGO_DIAS * 86400) return [];
+    $l = (array)(leer_json(archivo_esperando())['llaves'] ?? []);
+    return array_values(array_filter($l, fn($e) => is_array($e) && is_string($e['huella'] ?? null) && is_string($e['id'] ?? null)
+        && hash_equals((string)$c['huella'], (string)($e['codigo'] ?? ''))));
+}
+
+function guardar_esperando(array $l): void
+{
+    escribir_json(archivo_esperando(), ['llaves' => array_values($l)]);
+}
+
+/** La llave que espera confirmación con esa huella, o null. */
+function llave_esperando(string $llave): ?array
+{
+    if (!preg_match(LLAVE_FORMA, $llave)) return null;
+    $h = hash('sha256', $llave);
+    foreach (llaves_esperando() as $e) if (hash_equals((string)$e['huella'], $h)) return $e;
+    return null;
+}
+
+/** Anota que una llave que espera intentó subir una corrida (lo que Iván ve para decidir). Con el candado tomado. */
+function anotar_intento(string $llave, string $corrida, string $version, int $ahora): void
+{
+    $h = hash('sha256', $llave);
+    $l = llaves_esperando();
+    foreach ($l as $i => $e) {
+        if (!hash_equals((string)$e['huella'], $h)) continue;
+        if ($ahora - (int)($e['ultimo_intento'] ?? 0) < 10) return;   // muchas seguidas no reescriben el archivo cada vez
+        $l[$i]['intentos'] = (int)($e['intentos'] ?? 0) + 1;
+        $l[$i]['ultima'] = corrida_valida($corrida) ? $corrida : '';
+        $l[$i]['version'] = $version;
+        $l[$i]['ultimo_intento'] = $ahora;
+        guardar_esperando($l);
+        return;
+    }
+}
+
+/**
+ * Iván confirma una llave que espera: queda como la llave de subida (reemplaza a la vigente), el código se quema y las
+ * demás que esperaban se descartan. Devuelve la llave confirmada, o null si ya no estaba. Con el candado tomado.
+ */
+function confirmar_llave(string $id, int $ahora): ?array
+{
+    foreach (llaves_esperando() as $e) {
+        if (!hash_equals((string)$e['id'], $id)) continue;
+        escribir_json(archivo_llave(), ['huella' => (string)$e['huella'], 'creada' => (int)$e['llego'], 'origen' => 'wizlink',
+                                        'desde' => (string)($e['desde'] ?? ''), 'confirmada' => $ahora]);
+        $c = codigo_wizlink();
+        $c['usado'] = $ahora;
+        $c['llave'] = (string)$e['huella'];
+        escribir_json(archivo_codigo_wizlink(), $c);
+        guardar_esperando([]);
+        return $e;
+    }
+    return null;
+}
+
+/** Iván rechaza una llave que espera: se borra de la lista. El código sigue sirviendo. Con el candado tomado. */
+function rechazar_llave(string $id): ?array
+{
+    $l = llaves_esperando();
+    foreach ($l as $i => $e) {
+        if (!hash_equals((string)$e['id'], $id)) continue;
+        unset($l[$i]);
+        guardar_esperando($l);
+        return $e;
+    }
+    return null;
+}
+
+/** Hace $f con el candado del estado (el mismo de las subidas y el registro): nada se pisa. */
+function con_candado(callable $f)
+{
+    $candado = fopen(carpeta('estado') . '/subida.lock', 'c');
+    if ($candado === false || !flock($candado, LOCK_EX)) throw new RuntimeException('El sitio está ocupado.');
+    try {
+        return $f();
+    } finally {
+        flock($candado, LOCK_UN);
+        fclose($candado);
+    }
 }
 
 // ------------------------------------------------------------------ intentos con una llave o un código equivocados
