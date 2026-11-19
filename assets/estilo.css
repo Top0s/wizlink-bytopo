@@ -228,3 +228,29 @@ input[type="text"], input[type="password"], input:not([type]), input[inputmode] 
 .espera-titulo { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
 .formulario-espera { max-width: none; margin-top: 12px; }
 .botones { display: flex; flex-wrap: wrap; gap: 10px; }
+
+/* El horario de las corridas, a la derecha de la lista (Iván, 19-nov: A1, B2, C1) */
+.contenido-ancho { max-width: 1280px; }
+.con-horario { display: grid; grid-template-columns: minmax(0, 1fr) 350px; gap: 24px; align-items: start; }
+.panel-horario { padding: 16px 16px 12px; margin-top: 8px; }
+.panel-horario h2 { margin: 0 0 2px; font-size: 1.1rem; }
+.panel-sub { margin: 0 0 10px; color: var(--texto-2); font-size: .88rem; }
+.horario { width: 100%; border-collapse: collapse; font-size: .9rem; font-variant-numeric: tabular-nums; }
+.horario th { text-align: left; color: var(--texto-2); font-weight: 600; font-size: .8rem; padding: 4px; border-bottom: 2px solid var(--borde); }
+.horario td { padding: 5px 4px; border-bottom: 1px solid var(--borde); white-space: nowrap; }
+.tipo-e120 { color: var(--info-t); font-weight: 600; }
+.tipo-e365 { color: var(--atencion-t); font-weight: 600; }
+.horario-proxima td { background: var(--info-f); font-weight: 700; }
+.horario-proxima td:first-child { box-shadow: inset 4px 0 0 var(--primario); padding-left: 8px; }
+.horario-marca { display: block; font-size: .75rem; color: var(--info-t); }
+.horario-otro summary { cursor: pointer; min-height: 44px; display: flex; align-items: center; color: var(--enlace); font-weight: 600; }
+.horario-otro summary::before { content: "▸" / ""; margin-right: 6px; }
+.horario-otro[open] summary::before { content: "▾" / ""; }
+.horario-otro summary::-webkit-details-marker { display: none; }
+.panel-nota { color: var(--texto-2); font-size: .8rem; margin: 10px 0 0; }
+.horario-linea { display: none; margin: 0 0 14px; }
+@media (max-width: 900px) {
+  .con-horario { grid-template-columns: 1fr; }
+  .horario-linea { display: block; }
+  .panel-horario { margin-top: 24px; scroll-margin-top: 12px; }
+}

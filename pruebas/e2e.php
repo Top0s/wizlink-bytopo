@@ -94,7 +94,7 @@ foreach (['/', '/corrida.php?c=2026-11-19_00.59', '/archivo.php?c=2026-11-19_00.
     $x = pedir('GET', $r, ['sin_cookies' => true]);
     ok($x['codigo'] === 302 && str_contains($x['cab'], 'Location: /entrar.php'), "sin entrar, $r manda a la entrada ({$x['codigo']})");
 }
-foreach (['/.git/config', '/.git/HEAD', '/.git', '/.git%2Fconfig', '/%2egit/config', '//.git/config', '/x/../.git/config', '/lib/base.php', '/lib/', '/README.md', '/.htaccess', '/assets/', '/api/'] as $r) {
+foreach (['/.git/config', '/.git/HEAD', '/.git', '/.git%2Fconfig', '/%2egit/config', '//.git/config', '/x/../.git/config', '/lib/base.php', '/lib/horario.php', '/lib/', '/README.md', '/.htaccess', '/assets/', '/api/'] as $r) {
     $x = pedir('GET', $r, ['sin_cookies' => true]);
     ok(in_array($x['codigo'], [403, 404], true), "oculto: $r ({$x['codigo']})");
     ok(!str_contains($x['cuerpo'], 'repositoryformatversion') && !str_contains($x['cuerpo'], '<?php'), "oculto: $r no muestra contenido");
@@ -156,6 +156,11 @@ $r = pedir('POST', '/entrar.php?paso=codigo', ['cuerpo' => http_build_query(['fi
 ok($r['codigo'] === 302 && str_contains($r['cab'], 'Location: /'), "el código correcto entra ({$r['codigo']})");
 $l = pedir('GET', '/');
 ok($l['codigo'] === 200 && str_contains($l['cuerpo'], 'Corridas recibidas'), 'la lista se abre');
+// El horario de las corridas (Iván, 19-nov: A1, B2, C1): un panel, una sola «Próxima», las 12 corridas de un día normal
+// (11 el día 1) y el otro horario a un clic, con los nombres cortos
+ok(substr_count($l['cuerpo'], 'id="horario"') === 1 && substr_count($l['cuerpo'], 'class="horario-proxima"') === 1, 'horario: el panel con una sola próxima corrida');
+ok(substr_count($l['cuerpo'], '<tr') === 2 + 12 + 11 && str_contains($l['cuerpo'], 'Ext. 365') && str_contains($l['cuerpo'], 'Ext. 120') && str_contains($l['cuerpo'], 'Normal</span>'), 'horario: las dos tablas, día normal y día 1');
+ok(str_contains($l['cuerpo'], 'Próxima corrida:') && str_contains($l['cuerpo'], 'href="#horario"'), 'horario: la línea de la próxima corrida para el teléfono');
 ok(str_contains($l['cuerpo'], 'Todavía no hay llave de subida'), 'avisa que falta la llave');
 
 // ------------------------------------------------------------------ la llave de subida

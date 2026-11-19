@@ -17,6 +17,10 @@ aquí un .zip con su carpeta completa.
 - **Muestra** la lista de corridas por día (resultado, duración, versión, consultas en REVISAR, peso) y cada corrida con
   accesos directos al resumen, el diagnóstico, la bitácora y el control, todos sus archivos para ver o bajar, y el .zip
   completo.
+- **Tiene a la vista el horario de las corridas automáticas** (a la derecha de la lista; en el teléfono, al final, con
+  la próxima corrida arriba): el de hoy, con la próxima marcada, y el otro (día normal o día 1 del mes) a un clic. Es una
+  copia del horario fijo de WizLink (`Horario` en `app/nucleo/CorridaAutomatica.cs`): si allá cambia, se cambia también
+  en `lib/horario.php`.
 - **Se instala** en el teléfono como app desde Chrome (⋮ › Instalar app). No tiene service worker: no guarda nada en el
   teléfono.
 
@@ -114,7 +118,7 @@ sirviéndole a esa versión.
 | `corrida.php`, `archivo.php`, `bajar.php` | Una corrida, un archivo y el .zip completo |
 | `llave.php` | La llave de subida: confirmar la que registró WizLink, el código para WizLink o una llave para pegar a mano |
 | `api/subir.php`, `api/registrar.php` | Donde sube WizLink, y donde registra su llave (que espera la confirmación) |
-| `lib/` | El código común (no se sirve): base, sesión, acceso (usuario y contraseña), código de la app, almacén y el marco de las páginas |
+| `lib/` | El código común (no se sirve): base, sesión, acceso (usuario y contraseña), código de la app, almacén, el horario de las corridas y el marco de las páginas |
 | `assets/` | Estilos, iconos y los scripts del código QR y de «Copiar». `qrcode.js` es de Kazuhiko Arase (licencia MIT) |
 | `pruebas/` | La prueba de punta a punta (no se sirve) |
 
@@ -133,7 +137,7 @@ de un solo uso, los dos bloqueos también con 20 intentos a la vez, que restable
 sesiones abiertas y que un `totp.json` dañado detenga la entrada), la llave, cada rechazo de la subida (llave, nombre con
 trampa, huella, no es .zip, `../` adentro, y que muchas llaves equivocadas no bloqueen la correcta), que la misma corrida
 con otra huella no reemplace a la guardada, la corrida «(2)», que una falla al guardar no deje nada a medias, la limpieza
-de 30 días, lo que no se debe servir (`.git`, `lib/`, `pruebas/`, `.md`) y los encabezados de seguridad.
+de 30 días, el panel del horario, lo que no se debe servir (`.git`, `lib/`, `pruebas/`, `.md`) y los encabezados de seguridad.
 
 ## Cómo se revisa cada cambio
 Por pull request a `main`, con los chequeos de GitHub (`safety-checks` y `claude-review`) en verde; Iván lo fusiona.
