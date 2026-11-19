@@ -8,7 +8,7 @@
 
 declare(strict_types=1);
 
-const VERSION_SITIO = '1.3.0';
+const VERSION_SITIO = '1.4.0';
 const ZONA_HORARIA = 'America/Managua';   // la hora que se muestra; la bitácora va en UTC
 
 define('PUBLICO', dirname(__DIR__));

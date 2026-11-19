@@ -6,6 +6,7 @@ declare(strict_types=1);
 require_once __DIR__ . '/lib/sesion.php';
 require_once __DIR__ . '/lib/almacen.php';
 require_once __DIR__ . '/lib/vista.php';
+require_once __DIR__ . '/lib/horario.php';
 
 exigir_sesion();
 
@@ -15,7 +16,11 @@ $lista = $soloProblemas
     ? array_values(array_filter($todas, fn($d) => ($d['resultado'] ?? '') !== 'termino' || (int)($d['revisar'] ?? 0) > 0))
     : $todas;
 
-abrir_pagina('', true, 'corridas');
+abrir_pagina('', true, 'corridas', true);
+// A la izquierda la lista; a la derecha, el horario de las corridas (Iván, 19-nov: A1). En el teléfono el horario va al
+// final, y arriba queda una línea con la próxima corrida y un enlace a él.
+$ahora = time();
+echo '<div class="con-horario"><div class="con-horario-lista">';
 echo '<h1>Corridas recibidas</h1>';
 
 $esperando = count(llaves_esperando());
@@ -35,6 +40,7 @@ echo '<div class="resumen">
   <div class="dato"><span class="dato-titulo">Espacio usado</span><span class="dato-valor">' . h(peso(espacio_usado())) . '</span></div>
   <div class="dato"><span class="dato-titulo">Se guardan</span><span class="dato-valor">' . dias_guardar() . ' días</span></div>
 </div>';
+echo linea_proxima($ahora);
 
 echo '<div class="filtro" role="group" aria-label="Qué corridas mostrar">
   <a class="filtro-opcion"' . (!$soloProblemas ? ' aria-current="true"' : '') . ' href="/">' . (!$soloProblemas ? '<span class="simbolo" aria-hidden="true">✓</span>' : '') . 'Todas</a>
@@ -70,6 +76,7 @@ foreach ($lista as $d) {
 </li>';
 }
 if ($dia !== '') echo '</ul></section>';
+echo '</div>' . panel_horario($ahora) . '</div>';
 
 cerrar_pagina();
 

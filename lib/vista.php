@@ -6,8 +6,9 @@ declare(strict_types=1);
 
 require_once __DIR__ . '/base.php';
 
-/** El principio de la página. $menu: true en las páginas de adentro (con Corridas, Llave de subida y Salir). */
-function abrir_pagina(string $titulo, bool $menu, string $activa = ''): void
+/** El principio de la página. $menu: true en las páginas de adentro (con Corridas, Llave de subida y Salir).
+ *  $ancha: true en «Corridas», que lleva el panel del horario a la derecha. */
+function abrir_pagina(string $titulo, bool $menu, string $activa = '', bool $ancha = false): void
 {
     encabezados_seguridad();
     header('Content-Type: text/html; charset=utf-8');
@@ -41,7 +42,7 @@ function abrir_pagina(string $titulo, bool $menu, string $activa = ''): void
     echo '
 </header>';
     echo '
-<main id="contenido" class="contenido">';
+<main id="contenido" class="contenido' . ($ancha ? ' contenido-ancho' : '') . '">';
 }
 
 function cerrar_pagina(): void
