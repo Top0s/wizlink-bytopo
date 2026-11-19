@@ -8,7 +8,7 @@
 
 declare(strict_types=1);
 
-const VERSION_SITIO = '1.2.0';
+const VERSION_SITIO = '1.3.0';
 const ZONA_HORARIA = 'America/Managua';   // la hora que se muestra; la bitácora va en UTC
 
 define('PUBLICO', dirname(__DIR__));
@@ -82,6 +82,22 @@ function escribir_json(string $archivo, array $datos): void
     if (!@rename($tmp, $archivo)) {
         @unlink($tmp);
         throw new RuntimeException('No se pudo guardar ' . basename($archivo));
+    }
+}
+
+/**
+ * Hace $f con un candado del estado (wizlink-private/estado/<nombre>): mientras uno lo tiene, los demás esperan su turno.
+ * Así dos peticiones a la vez no se pisan al leer y escribir el mismo archivo. Devuelve lo que devuelve $f.
+ */
+function con_candado_archivo(string $nombre, callable $f)
+{
+    $candado = fopen(carpeta('estado') . '/' . $nombre, 'c');
+    if ($candado === false || !flock($candado, LOCK_EX)) throw new RuntimeException('El sitio está ocupado.');
+    try {
+        return $f();
+    } finally {
+        flock($candado, LOCK_UN);
+        fclose($candado);
     }
 }
 

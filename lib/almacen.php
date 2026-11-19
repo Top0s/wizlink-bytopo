@@ -30,10 +30,13 @@ function corrida_valida(string $c): bool
     return checkdate((int)$m[2], (int)$m[3], (int)$m[1]) && (int)$m[4] < 24 && (int)$m[5] < 60;
 }
 
-/** El nombre que se usa en el servidor y en las direcciones: «2026-11-19_14.00» o «2026-11-19_14.00_2». */
+/**
+ * El nombre que se usa en el servidor y en las direcciones: «2026-11-19_14.00» o «2026-11-19_14.00_2». Primero el número
+ * de la segunda corrida del mismo minuto, y después los espacios (al revés, « (2)» ya no se encontraba: quedaba «_(2)»).
+ */
 function clave_de(string $corrida): string
 {
-    return preg_replace('/ \((\d+)\)$/', '_$1', str_replace(' ', '_', $corrida), 1) ?? '';
+    return str_replace(' ', '_', preg_replace('/ \((\d{1,3})\)$/', '_$1', $corrida, 1) ?? '');
 }
 
 function clave_valida(string $clave): bool
@@ -245,14 +248,7 @@ function rechazar_llave(string $id): ?array
 /** Hace $f con el candado del estado (el mismo de las subidas y el registro): nada se pisa. */
 function con_candado(callable $f)
 {
-    $candado = fopen(carpeta('estado') . '/subida.lock', 'c');
-    if ($candado === false || !flock($candado, LOCK_EX)) throw new RuntimeException('El sitio está ocupado.');
-    try {
-        return $f();
-    } finally {
-        flock($candado, LOCK_UN);
-        fclose($candado);
-    }
+    return con_candado_archivo('subida.lock', $f);
 }
 
 // ------------------------------------------------------------------ intentos con una llave o un código equivocados
@@ -413,9 +409,31 @@ function espacio_usado(): int
     return $t;
 }
 
+/**
+ * Las «(2)» que guardaron las versiones anteriores del sitio quedaron como «…_(2).zip», un nombre que la lista no mostraba
+ * y la limpieza no borraba: se les pone el nombre de ahora («…_2.zip»), con sus datos. Devuelve cuántas renombró.
+ */
+function renombrar_nombres_viejos(): int
+{
+    $n = 0;
+    foreach (glob(carpeta('corridas') . '/*/*_(*).zip') ?: [] as $f) {
+        if (!preg_match('/^(\d{4}-\d{2}-\d{2}_\d{2}\.\d{2})_\((\d{1,3})\)\.zip$/', basename($f), $m)) continue;
+        $nueva = $m[1] . '_' . $m[2];
+        $base = dirname($f) . '/';
+        if (!clave_valida($nueva) || file_exists($base . $nueva . '.zip')) continue;
+        if (!@rename($f, $base . $nueva . '.zip')) continue;
+        $datos = substr($f, 0, -4) . '.json';
+        if (is_file($datos)) @rename($datos, $base . $nueva . '.json');
+        registrar('corrida renombrada: ' . basename($f) . ' ahora es ' . $nueva . '.zip');
+        $n++;
+    }
+    return $n;
+}
+
 /** Borra las corridas de más días que los configurados. Devuelve cuántas borró. */
 function limpiar_viejas(int $ahora): int
 {
+    renombrar_nombres_viejos();
     $limite = $ahora - dias_guardar() * 86400;
     $n = 0;
     foreach (glob(carpeta('corridas') . '/*/*.zip') ?: [] as $f) {

@@ -8,7 +8,8 @@
 //   X-WizLink-Sha256: <64 hex>             la huella del .zip, para saber que llegó entero
 //   X-WizLink-Version: Beta 3.1 (1.0.10)   la versión de WizLink (solo para mostrarla)
 //
-// Lo que responde (JSON): {"ok": true, "ya_estaba": false, "mensaje": "…"} con 200; 400 si el .zip o los datos no
+// Lo que responde (JSON): {"ok": true, "ya_estaba": false, "mensaje": "…"} con 200 («ya_estaba»: true si esa corrida ya
+// estaba guardada, aunque llegue con otra huella: la guardada nunca se reemplaza); 400 si el .zip o los datos no
 // sirven (no se reintenta), 401 si la llave no sirve, 405 si no es POST, 409 si la llave espera la confirmación de Iván
 // (Iván, 19-nov: S1; WizLink la deja pendiente y la reenvía), 413 si pesa demasiado, 422 si llegó cortada,
 // 429 si hubo muchos intentos con una llave equivocada en la última hora (una llave correcta entra siempre), y 500 si
@@ -66,6 +67,12 @@ if ($largo > MAXIMO_BYTES) responder_json(413, ['ok' => false, 'mensaje' => 'La 
 if ($largo <= 0) responder_json(400, ['ok' => false, 'mensaje' => 'La corrida llegó vacía.']);
 
 $clave = clave_de($corrida);
+if (!clave_valida($clave)) {
+    // No debería pasar nunca (corrida_valida ya revisó el nombre): mejor no guardarla que guardarla donde nadie la ve.
+    // Con 500, WizLink la deja pendiente y la vuelve a mandar.
+    registrar('subida con error: ' . $corrida . ': el nombre no se pudo convertir (' . $clave . ')');
+    responder_json(500, ['ok' => false, 'mensaje' => 'El sitio no pudo guardar la corrida. Se reintenta después.']);
+}
 $destino = ruta_zip($clave);
 $tmp = carpeta('corridas/recibiendo') . '/' . $clave . '.' . bin2hex(random_bytes(6)) . '.part';
 
@@ -108,17 +115,35 @@ try {
         responder_json(400, ['ok' => false, 'mensaje' => 'La corrida no se guardó: ' . $problema . '.']);
     }
 
-    // La misma corrida otra vez (un reenvío): si es idéntica, no se toca
-    $datosAntes = leer_json(ruta_datos($clave));
-    if (is_file($destino) && is_array($datosAntes) && hash_equals((string)($datosAntes['sha256'] ?? ''), $sha)) {
+    // La misma corrida otra vez (un reenvío): la guardada nunca se reemplaza. WizLink arma el .zip de nuevo en cada
+    // reintento, con sus bitácoras al día, así que un reenvío casi siempre llega con otra huella; y la llave de subida
+    // solo sirve para subir, nunca para cambiar lo que ya está. Para WizLink queda como «ya estaba».
+    $rutaDatos = ruta_datos($clave);
+    if (is_file($destino)) {
         @unlink($tmp);
-        registrar('subida repetida: ' . $corrida . ' (ya estaba igual)');
+        $datosAntes = leer_json($rutaDatos);
+        if ($datosAntes === null) {
+            // El .zip quedó sin sus datos (lo podía dejar una versión anterior del sitio): se rehacen a partir de él
+            $datos = datos_de_zip($destino, $corrida, $version, (int)filesize($destino), (string)hash_file('sha256', $destino));
+            $datos['recibida'] = (int)filemtime($destino);
+            escribir_json($rutaDatos, $datos);
+            registrar('subida repetida: ' . $corrida . ' (se rehicieron los datos de la que ya estaba)');
+        } elseif (hash_equals((string)($datosAntes['sha256'] ?? ''), $sha)) {
+            registrar('subida repetida: ' . $corrida . ' (ya estaba igual)');
+        } else {
+            registrar('subida repetida: ' . $corrida . ' (llegó otra versión; se conservó la que ya estaba)');
+        }
         responder_json(200, ['ok' => true, 'ya_estaba' => true, 'mensaje' => 'Esta corrida ya estaba en wizlink.bytopo.net.']);
     }
 
+    // Primero los datos y después el .zip: la lista solo muestra una corrida que tiene los dos. Si el .zip no se puede
+    // poner en su lugar, se borran los datos: nunca queda nada a medias, y WizLink la vuelve a mandar.
     $datos = datos_de_zip($tmp, $corrida, $version, $total, $sha);
-    if (!@rename($tmp, $destino)) throw new RuntimeException('no se pudo guardar la corrida');
-    escribir_json(ruta_datos($clave), $datos);
+    escribir_json($rutaDatos, $datos);
+    if (!@rename($tmp, $destino)) {
+        @unlink($rutaDatos);
+        throw new RuntimeException('no se pudo guardar la corrida');
+    }
     $borradas = limpiar_viejas($ahora);
     registrar('subida: ' . $corrida . ' · ' . peso($total) . ' · ' . $datos['archivos'] . ' archivos · ' . $datos['resultado']
         . ($borradas > 0 ? ' · limpieza: ' . $borradas . ' corridas de más de ' . dias_guardar() . ' días' : ''));

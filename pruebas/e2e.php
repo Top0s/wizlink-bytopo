@@ -10,7 +10,8 @@ $fallas = 0; $total = 0;
 
 function ok(bool $c, string $d): void { global $fallas, $total; $total++; if (!$c) { $fallas++; echo "FALLA: $d\n"; } }
 
-function pedir(string $metodo, string $ruta, array $op = []): array
+/** Una petición lista para mandar, siempre a esta computadora (127.0.0.1) y nunca por un proxy. */
+function peticion(string $metodo, string $ruta, array $op = [])
 {
     global $base, $tarro;
     $ch = curl_init($base . $ruta);
@@ -26,14 +27,55 @@ function pedir(string $metodo, string $ruta, array $op = []): array
         CURLOPT_NOPROXY => '*',
         CURLOPT_HTTPHEADER => $cab,
     ]);
-    if (!($op['sin_cookies'] ?? false)) { curl_setopt($ch, CURLOPT_COOKIEJAR, $tarro); curl_setopt($ch, CURLOPT_COOKIEFILE, $tarro); }
+    $t = $op['tarro'] ?? $tarro;   // otro tarro de cookies: otra sesión
+    if (!($op['sin_cookies'] ?? false)) { curl_setopt($ch, CURLOPT_COOKIEJAR, $t); curl_setopt($ch, CURLOPT_COOKIEFILE, $t); }
     if (isset($op['desde'])) curl_setopt($ch, CURLOPT_INTERFACE, $op['desde']);   // otra dirección de esta misma computadora (127.0.0.x)
     if (isset($op['cuerpo'])) curl_setopt($ch, CURLOPT_POSTFIELDS, $op['cuerpo']);
-    $r = curl_exec($ch);
+    return $ch;
+}
+
+function respuesta($ch, ?string $r): array
+{
     $codigo = (int)curl_getinfo($ch, CURLINFO_RESPONSE_CODE);
     $tc = (int)curl_getinfo($ch, CURLINFO_HEADER_SIZE);
-    curl_close($ch);
     return ['codigo' => $codigo, 'cab' => substr((string)$r, 0, $tc), 'cuerpo' => substr((string)$r, $tc)];
+}
+
+function pedir(string $metodo, string $ruta, array $op = []): array
+{
+    $ch = peticion($metodo, $ruta, $op);
+    $r = curl_exec($ch);
+    $x = respuesta($ch, is_string($r) ? $r : null);
+    curl_close($ch);
+    return $x;
+}
+
+/** Varias peticiones a la vez (como alguien que intenta en paralelo). $lista: [[metodo, ruta, op], ...] */
+function pedir_a_la_vez(array $lista): array
+{
+    $mh = curl_multi_init();
+    $hs = [];
+    foreach ($lista as $i => [$metodo, $ruta, $op]) { $hs[$i] = peticion($metodo, $ruta, $op); curl_multi_add_handle($mh, $hs[$i]); }
+    do { $st = curl_multi_exec($mh, $activas); if ($activas) curl_multi_select($mh, 1.0); } while ($activas && $st === CURLM_OK);
+    $res = [];
+    foreach ($hs as $i => $ch) { $res[$i] = respuesta($ch, curl_multi_getcontent($ch)); curl_multi_remove_handle($mh, $ch); curl_close($ch); }
+    curl_multi_close($mh);
+    return $res;
+}
+
+/** El nombre con que el sitio guarda una corrida: «2026-11-19 14.00 (2)» → «2026-11-19_14.00_2». */
+function clave_e2e(string $corrida): string { return str_replace(' ', '_', (string)preg_replace('/ \((\d+)\)$/', '_$1', $corrida)); }
+
+/** Un .zip inventado con la forma de una corrida de WizLink. */
+function zip_de_prueba(string $corrida, string $nota): string
+{
+    $f = tempnam(sys_get_temp_dir(), 'z') . '.zip';
+    $z = new ZipArchive(); $z->open($f, ZipArchive::CREATE | ZipArchive::OVERWRITE);
+    $z->addFromString($corrida . '/evidencia/resumen.txt', "WIZLINK · Prueba 6 · RESUMEN DE LA CORRIDA\nDuración: 1 min 2 s\nResultado: TERMINÓ ($nota)\n");
+    $z->addFromString('bitacoras_wizlink/corrida_automatica.txt', "inventada: $nota\n");
+    $z->close();
+    $d = (string)file_get_contents($f); @unlink($f);
+    return $d;
 }
 
 function h_e2e(string $s): string { return htmlspecialchars($s, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8'); }
@@ -153,12 +195,37 @@ $r = $subir($cabBuena, $datos);
 ok($r['codigo'] === 200 && str_contains($r['cuerpo'], '"ok":true') && str_contains($r['cuerpo'], '"ya_estaba":false'), "subir: la corrida se guarda ({$r['codigo']} {$r['cuerpo']})");
 $r = $subir($cabBuena, $datos);
 ok($r['codigo'] === 200 && str_contains($r['cuerpo'], '"ya_estaba":true'), 'subir: la misma otra vez queda como ya estaba');
+// La misma corrida con otra huella (un reintento de WizLink arma el .zip de nuevo, con sus bitácoras al día): nunca
+// reemplaza a la guardada
+$fb = tempnam(sys_get_temp_dir(), 'z') . '.zip'; file_put_contents($fb, $datos);
+$z = new ZipArchive(); $z->open($fb); $z->addFromString('bitacoras_wizlink/reintento.txt', 'otra versión, inventada'); $z->close();
+$datosB = (string)file_get_contents($fb); @unlink($fb);
+$guardada = $privado . '/corridas/' . substr(clave_e2e($corrida), 0, 7) . '/' . clave_e2e($corrida);
+$r = $subir(array_merge(array_slice($cabBuena, 0, 3), ['X-WizLink-Sha256: ' . hash('sha256', $datosB)]), $datosB);
+ok($r['codigo'] === 200 && str_contains($r['cuerpo'], '"ya_estaba":true'), "subir: la misma corrida con otra huella queda como ya estaba ({$r['codigo']} {$r['cuerpo']})");
+ok(hash_file('sha256', $guardada . '.zip') === $sha && (json_decode((string)@file_get_contents($guardada . '.json'), true)['sha256'] ?? '') === $sha,
+   'subir: la corrida guardada no se reemplaza (ni el .zip ni sus datos)');
+// Dos corridas que empezaron en el mismo minuto: WizLink nombra la segunda «… (2)» (Salida.cs)
+$corrida2 = $corrida . ' (2)';
+$z2 = zip_de_prueba($corrida2, 'la segunda del mismo minuto');
+$r = $subir(array_merge(array_slice($cabBuena, 0, 2), ['X-WizLink-Corrida: ' . $corrida2, 'X-WizLink-Sha256: ' . hash('sha256', $z2)]), $z2);
+ok($r['codigo'] === 200 && str_contains($r['cuerpo'], '"ya_estaba":false'), "subir: la corrida «(2)» se guarda ({$r['codigo']})");
+$clave2 = clave_e2e($corrida2);
+ok(is_file($privado . '/corridas/' . substr($clave2, 0, 7) . '/' . $clave2 . '.zip'), "subir: la «(2)» queda como $clave2.zip");
 // Muchas llaves equivocadas no bloquean a la correcta
 for ($i = 0; $i < 31; $i++) $subir(array_merge(['Authorization: Bearer wzr_' . str_repeat('C', 43)], array_slice($cabBuena, 1)), 'x');
 ok($subir(array_merge(['Authorization: Bearer wzr_' . str_repeat('C', 43)], array_slice($cabBuena, 1)), 'x')['codigo'] === 429, 'subir: después de 30 llaves equivocadas en una hora, 429');
 $r = $subir($cabBuena, $datos);
 ok($r['codigo'] === 200, "subir: la llave correcta sigue entrando ({$r['codigo']})");
 ok(count(glob(dirname($privado) . '/public_html/**/*.zip') ?: []) === 0 && count(glob(dirname($privado) . '/public_html/*.zip') ?: []) === 0, 'nada queda dentro de public_html');
+
+// Una «(3)» guardada con el nombre que usaban las versiones anteriores («…_(3)», que no se veía): se renombra sola con
+// la siguiente subida
+$claveP = clave_e2e($corrida);
+$antes3 = $privado . '/corridas/' . substr($claveP, 0, 7) . '/' . $claveP . '_(3)';
+file_put_contents($antes3 . '.zip', zip_de_prueba($corrida . ' (3)', 'guardada con el nombre de antes'));
+file_put_contents($antes3 . '.json', json_encode(['corrida' => $corrida . ' (3)', 'recibida' => time(), 'bytes' => 1, 'sha256' => str_repeat('0', 64), 'version' => 'Prueba 6', 'resultado' => 'termino', 'detalle' => '', 'duracion' => '', 'consultas' => 0, 'revisar' => 0, 'archivos' => 2]));
+@chown($antes3 . '.zip', 'www-data'); @chown($antes3 . '.json', 'www-data');
 
 // Una corrida vieja (de hace 40 días) se borra con la siguiente subida
 $vieja = date('Y-m-d H.i', time() - 40 * 86400);
@@ -168,6 +235,35 @@ $dv = file_get_contents($zv);
 ok($subir(array_merge(array_slice($cabBuena, 0, 2), ['X-WizLink-Corrida: ' . $vieja, 'X-WizLink-Sha256: ' . hash('sha256', $dv)]), $dv)['codigo'] === 200, 'subir: una corrida vieja se recibe');
 $clVieja = str_replace(' ', '_', $vieja);
 ok(!is_file($privado . '/corridas/' . substr($clVieja, 0, 7) . '/' . $clVieja . '.zip'), 'la limpieza borra la de más de 30 días');
+ok(!is_file($antes3 . '.zip') && is_file($privado . '/corridas/' . substr($claveP, 0, 7) . '/' . $claveP . '_3.zip') && is_file($privado . '/corridas/' . substr($claveP, 0, 7) . '/' . $claveP . '_3.json'),
+   'la limpieza renombra una «(3)» guardada con el nombre de antes, con sus datos');
+$vieja2 = $vieja . ' (2)';
+$dv2 = zip_de_prueba($vieja2, 'vieja del mismo minuto');
+ok($subir(array_merge(array_slice($cabBuena, 0, 2), ['X-WizLink-Corrida: ' . $vieja2, 'X-WizLink-Sha256: ' . hash('sha256', $dv2)]), $dv2)['codigo'] === 200, 'subir: una «(2)» vieja se recibe');
+ok(count(glob($privado . '/corridas/' . substr($clVieja, 0, 7) . '/' . $clVieja . '*') ?: []) === 0, 'la limpieza también borra la «(2)» de más de 30 días');
+
+// Si algo falla al guardar, nunca queda una corrida a medias, y el reintento de WizLink la guarda entera
+$cf = substr($corrida, 0, 10) . ' 00.01'; $clf = clave_e2e($cf); $dirF = $privado . '/corridas/' . substr($clf, 0, 7);
+$zf = zip_de_prueba($cf, 'falla al guardar');
+$cabF = array_merge(array_slice($cabBuena, 0, 2), ['X-WizLink-Corrida: ' . $cf, 'X-WizLink-Sha256: ' . hash('sha256', $zf)]);
+@mkdir("$dirF/$clf.json");   // los datos no se pueden escribir
+$r = $subir($cabF, $zf);
+ok($r['codigo'] === 500 && !is_file("$dirF/$clf.zip"), "falla al guardar los datos: 500 y no queda un .zip sin datos ({$r['codigo']})");
+@rmdir("$dirF/$clf.json");
+@mkdir("$dirF/$clf.zip");    // ahora el .zip no se puede poner en su lugar
+$r = $subir($cabF, $zf);
+ok($r['codigo'] === 500 && !is_file("$dirF/$clf.json"), "falla al guardar el .zip: 500 y no quedan datos sueltos ({$r['codigo']})");
+@rmdir("$dirF/$clf.zip");
+$r = $subir($cabF, $zf);
+ok($r['codigo'] === 200 && is_file("$dirF/$clf.zip") && is_file("$dirF/$clf.json"), "falla al guardar: el reintento la guarda entera ({$r['codigo']})");
+// Un .zip guardado sin sus datos (lo podía dejar una versión anterior): el siguiente envío rehace los datos a partir del
+// .zip guardado, sin reemplazarlo
+unlink("$dirF/$clf.json");
+$zf2 = zip_de_prueba($cf, 'reintento con otra huella');
+$r = $subir(array_merge(array_slice($cabBuena, 0, 2), ['X-WizLink-Corrida: ' . $cf, 'X-WizLink-Sha256: ' . hash('sha256', $zf2)]), $zf2);
+$jf = json_decode((string)@file_get_contents("$dirF/$clf.json"), true);
+ok($r['codigo'] === 200 && str_contains($r['cuerpo'], '"ya_estaba":true') && ($jf['sha256'] ?? '') === hash('sha256', $zf) && hash_file('sha256', "$dirF/$clf.zip") === hash('sha256', $zf),
+   "un .zip sin sus datos: se rehacen a partir del guardado, sin reemplazarlo ({$r['codigo']})");
 
 // ------------------------------------------------------------------ el código para WizLink (L4)
 $pl = pedir('GET', '/llave.php');
@@ -258,6 +354,9 @@ $clave = str_replace(' ', '_', $corrida);
 $l = pedir('GET', '/');
 ok(str_contains($l['cuerpo'], '/corrida.php?c=' . rawurlencode($clave)), 'la lista muestra la corrida');
 ok(str_contains($l['cuerpo'], 'Terminó'), 'la lista dice que terminó');
+ok(str_contains($l['cuerpo'], '/corrida.php?c=' . rawurlencode($clave2)) && str_contains($l['cuerpo'], ' (2)</span>'), 'la lista muestra la «(2)», con su número');
+$c2 = pedir('GET', '/corrida.php?c=' . rawurlencode($clave2));
+ok($c2['codigo'] === 200 && str_contains($c2['cuerpo'], '(2)</h1>'), "la «(2)» se abre y su título la distingue ({$c2['codigo']})");
 $c = pedir('GET', '/corrida.php?c=' . rawurlencode($clave));
 ok($c['codigo'] === 200 && str_contains($c['cuerpo'], 'Resumen') && str_contains($c['cuerpo'], 'Diagnóstico') && str_contains($c['cuerpo'], 'Bitácora'), 'la corrida tiene sus accesos');
 $a = pedir('GET', '/archivo.php?c=' . rawurlencode($clave) . '&f=' . rawurlencode($corrida . '/evidencia/resumen.txt'));
@@ -280,6 +379,79 @@ $fs = preg_match('/action="\/salir.php"><input type="hidden" name="ficha" value=
 ok(pedir('GET', '/salir.php')['codigo'] === 302 && pedir('GET', '/')['codigo'] === 200, 'salir por GET no cierra la sesión');
 pedir('POST', '/salir.php', ['cuerpo' => http_build_query(['ficha' => $fs]), 'cabeceras' => ['Origin: https://wizlink.bytopo.net']]);
 ok(pedir('GET', '/')['codigo'] === 302, 'Salir cierra la sesión');
+
+// ------------------------------------------------------------------ restablecer la contraseña o la app cierra las sesiones abiertas
+$pasoClave = function (array $op = []) use ($contrasena, $origen): array {
+    $p = pedir('GET', '/entrar.php', $op);
+    return pedir('POST', '/entrar.php?paso=clave', $op + ['cuerpo' => http_build_query(['ficha' => ficha_de($p['cuerpo']), 'usuario' => 'prueba01', 'clave' => $contrasena]), 'cabeceras' => $origen]);
+};
+$totp = $privado . '/estado/totp.json';
+$entrarCompleto = function () use ($pasoClave, $totp, $secreto, $origen): bool {
+    $pasoClave();
+    $t = json_decode((string)file_get_contents($totp), true);
+    $t['ultimo_paso'] = 0;   // para poder usar el código de ahora aunque esta prueba ya lo haya usado
+    file_put_contents($totp, json_encode($t));
+    $p = pedir('GET', '/entrar.php');
+    $r = pedir('POST', '/entrar.php?paso=codigo', ['cuerpo' => http_build_query(['ficha' => ficha_de($p['cuerpo']), 'codigo' => codigo($secreto, intdiv(time(), 30))]), 'cabeceras' => $origen]);
+    return $r['codigo'] === 302 && pedir('GET', '/')['codigo'] === 200;
+};
+ok($entrarCompleto(), 'sesiones: se entra con los dos pasos');
+rename($totp, $totp . '.aparte');   // como borrar totp.json en el Administrador de archivos (teléfono perdido)
+ok(pedir('GET', '/')['codigo'] === 302, 'sesiones: borrar totp.json cierra la sesión abierta');
+rename($totp . '.aparte', $totp);
+ok(pedir('GET', '/')['codigo'] === 302, 'sesiones: y sigue cerrada aunque el archivo vuelva');
+ok($entrarCompleto(), 'sesiones: se entra otra vez');
+$acceso = $privado . '/estado/acceso.json';
+$accesoAntes = (string)file_get_contents($acceso);
+$a = json_decode($accesoAntes, true);
+$a['huella'] = password_hash('otra-clave-inventada-9999', PASSWORD_DEFAULT); $a['creado'] = time();
+file_put_contents($acceso, json_encode($a));   // como borrar acceso.json y crear el acceso otra vez
+ok(pedir('GET', '/')['codigo'] === 302, 'sesiones: cambiar la contraseña cierra la sesión abierta');
+file_put_contents($acceso, $accesoAntes);
+
+// totp.json dañado: la entrada se detiene y nunca ofrece configurar otra app
+$totpBueno = (string)file_get_contents($totp);
+file_put_contents($totp, '{"secreto": "da');
+$pasoClave();
+$p = pedir('GET', '/entrar.php');
+ok(str_contains($p['cuerpo'], 'No se puede leer la configuración de la app de autenticación') && !str_contains($p['cuerpo'], 'otpauth') && !str_contains($p['cuerpo'], 'name="codigo"'),
+   'totp.json dañado: avisa y no ofrece configurar otra app');
+$r = pedir('POST', '/entrar.php?paso=codigo', ['cuerpo' => http_build_query(['ficha' => ficha_de($p['cuerpo']), 'codigo' => codigo($secreto, intdiv(time(), 30))]), 'cabeceras' => $origen]);
+ok($r['codigo'] !== 302 && file_get_contents($totp) === '{"secreto": "da', 'totp.json dañado: no entra ni lo reemplaza');
+file_put_contents($totp, $totpBueno);
+pedir('POST', '/salir.php', ['cuerpo' => http_build_query(['ficha' => ficha_de($p['cuerpo'])]), 'cabeceras' => $origen]);
+
+// ------------------------------------------------------------------ intentos en paralelo: el tope de cinco se cumple igual
+pedir_a_la_vez(array_fill(0, 30, ['GET', '/robots.txt', ['sin_cookies' => true]]));   // que el servidor tenga sus procesos listos
+$tarroNuevo = fn() => tempnam(sys_get_temp_dir(), 'tarro');
+$desdeP = '127.0.0.30';
+$lista = [];
+for ($i = 0; $i < 20; $i++) {
+    $t = $tarroNuevo();
+    $p = pedir('GET', '/entrar.php', ['tarro' => $t, 'desde' => $desdeP]);
+    $lista[] = ['POST', '/entrar.php?paso=clave', ['tarro' => $t, 'desde' => $desdeP, 'cabeceras' => $origen,
+        'cuerpo' => http_build_query(['ficha' => ficha_de($p['cuerpo']), 'usuario' => 'prueba01', 'clave' => "equivocada-$i-9999"])]];
+}
+$res = pedir_a_la_vez($lista);
+$revisadas = count(array_filter($res, fn($x) => str_contains($x['cuerpo'], 'Usuario o contraseña incorrectos')));
+ok($revisadas <= 5, "en paralelo: de 20 contraseñas equivocadas a la vez se revisan como máximo 5 ($revisadas)");
+$r = $pasoClave(['tarro' => $tarroNuevo(), 'desde' => $desdeP]);
+ok($r['codigo'] !== 302 && str_contains($r['cuerpo'], 'Demasiados intentos'), 'en paralelo: después, esa dirección queda bloqueada aunque llegue la contraseña correcta');
+$desdeC = '127.0.0.31';
+$validos = array_map(fn($d) => codigo($secreto, intdiv(time(), 30) + $d), [-1, 0, 1, 2]);
+$lista = [];
+for ($i = 0; $i < 20; $i++) {
+    $t = $tarroNuevo();
+    $pasoClave(['tarro' => $t, 'desde' => $desdeC]);
+    $p = pedir('GET', '/entrar.php', ['tarro' => $t, 'desde' => $desdeC]);
+    $mal = sprintf('%06d', 314159 + $i);
+    if (in_array($mal, $validos, true)) $mal = sprintf('%06d', 271828 + $i);
+    $lista[] = ['POST', '/entrar.php?paso=codigo', ['tarro' => $t, 'desde' => $desdeC, 'cabeceras' => $origen, 'cuerpo' => http_build_query(['ficha' => ficha_de($p['cuerpo']), 'codigo' => $mal])]];
+}
+$res = pedir_a_la_vez($lista);
+$revisados = count(array_filter($res, fn($x) => str_contains($x['cuerpo'], 'no es correcto o ya se usó')));
+ok($revisados <= 5, "en paralelo: de 20 códigos equivocados a la vez se revisan como máximo 5 ($revisados)");
+ok((int)(json_decode((string)@file_get_contents($privado . '/estado/intentos.json'), true)['bloqueado_hasta'] ?? 0) > time(), 'en paralelo: después, la entrada queda bloqueada 15 minutos');
 
 // ------------------------------------------------------------------ segunda entrada: contraseña, el código de un solo uso y los bloqueos
 $p = pedir('GET', '/entrar.php');

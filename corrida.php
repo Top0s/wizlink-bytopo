@@ -21,10 +21,11 @@ if ($datos === null || !is_file(ruta_zip($clave))) {
 }
 $corrida = corrida_de($clave);
 $m = momento_de($clave);
+$sufijo = preg_match('/_(\d+)$/', $clave, $mm) ? ' (' . $mm[1] . ')' : '';   // la segunda del mismo minuto, como en la lista
 
 abrir_pagina('Corrida ' . $corrida, true);
 echo '<p class="migas"><a href="/">‹ Corridas</a></p>
-<h1>Corrida del ' . h(fecha_hora($m)) . '</h1>
+<h1>Corrida del ' . h(fecha_hora($m)) . h($sufijo) . '</h1>
 <div class="cabecera-corrida">' . etiqueta_resultado($datos) . '</div>';
 if (($datos['resultado'] ?? '') === 'detuvo' && ($datos['detalle'] ?? '') !== '') {
     echo aviso('error', '<p>' . h($datos['detalle']) . '</p>');
