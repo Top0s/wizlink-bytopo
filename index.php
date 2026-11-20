@@ -33,6 +33,7 @@ if ($esperando > 0) {
 }
 
 $ultima = $todas[0] ?? null;
+echo aviso_automatica($ultima, $ahora);
 echo '<div class="resumen">
   <div class="dato"><span class="dato-titulo">Última recibida</span><span class="dato-valor">'
     . ($ultima ? h(fecha_hora((int)$ultima['recibida'])) : 'Ninguna todavía') . '</span></div>

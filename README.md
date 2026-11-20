@@ -21,6 +21,13 @@ aquí un .zip con su carpeta completa.
   la próxima corrida arriba): el de hoy, con la próxima marcada, y el otro (día normal o día 1 del mes) a un clic. Es una
   copia del horario fijo de WizLink (`Horario` en `app/nucleo/CorridaAutomatica.cs`): si allá cambia, se cambia también
   en `lib/horario.php`.
+- **Avisa arriba de la lista si la corrida automática necesita a alguien** (Iván, 20-nov: D): «El último respaldo
+  reportó la corrida automática en pausa», con cuándo llegó, el motivo y qué hacer, si la corrida más nueva trae la pausa
+  en el estado de WizLink (`bitacoras_wizlink/corrida_automatica_estado.txt` dentro del .zip; solo se leen `pausa` y
+  `que_hacer`). Es el estado de ese respaldo: WizLink no manda uno al pausar ni al reanudar. «Qué hacer» solo muestra
+  los textos que WizLink escribe; cualquier otro se cambia por «Revise el estado de la corrida automática directamente
+  en WizLink». Aparte, «Sin corridas nuevas» si, según el horario, ya pasó lo que dura una corrida y una hora más sin
+  que llegue ninguna que haya empezado a esa hora o después.
 - **Se instala** en el teléfono como app desde Chrome (⋮ › Instalar app). No tiene service worker: no guarda nada en el
   teléfono.
 
@@ -137,7 +144,7 @@ de un solo uso, los dos bloqueos también con 20 intentos a la vez, que restable
 sesiones abiertas y que un `totp.json` dañado detenga la entrada), la llave, cada rechazo de la subida (llave, nombre con
 trampa, huella, no es .zip, `../` adentro, y que muchas llaves equivocadas no bloqueen la correcta), que la misma corrida
 con otra huella no reemplace a la guardada, la corrida «(2)», que una falla al guardar no deje nada a medias, la limpieza
-de 30 días, el panel del horario, lo que no se debe servir (`.git`, `lib/`, `pruebas/`, `.md`) y los encabezados de seguridad.
+de 30 días, el panel del horario, el aviso de la pausa (y `pruebas/avisos.php`, el de las corridas atrasadas), lo que no se debe servir (`.git`, `lib/`, `pruebas/`, `.md`) y los encabezados de seguridad.
 
 ## Cómo se revisa cada cambio
 Por pull request a `main`, con los chequeos de GitHub (`safety-checks` y `claude-review`) en verde; Iván lo fusiona.

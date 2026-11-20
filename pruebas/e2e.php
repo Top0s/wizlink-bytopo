@@ -69,13 +69,17 @@ function clave_e2e(string $corrida): string { return str_replace(' ', '_', (stri
 /** Un .zip inventado con la forma de una corrida de WizLink. */
 function zip_de_prueba(string $corrida, string $nota): string
 {
-    $f = tempnam(sys_get_temp_dir(), 'z') . '.zip';
-    $z = new ZipArchive(); $z->open($f, ZipArchive::CREATE | ZipArchive::OVERWRITE);
-    $z->addFromString($corrida . '/evidencia/resumen.txt', "WIZLINK · Prueba 6 · RESUMEN DE LA CORRIDA\nDuración: 1 min 2 s\nResultado: TERMINÓ ($nota)\n");
-    $z->addFromString('bitacoras_wizlink/corrida_automatica.txt', "inventada: $nota\n");
-    $z->close();
-    $d = (string)file_get_contents($f); @unlink($f);
-    return $d;
+    // La ruta que da tempnam(), sin agregarle «.zip»: tempnam() ya crea ese archivo, y así se borra el mismo (Codex, PR #7)
+    $f = tempnam(sys_get_temp_dir(), 'z');
+    try {
+        $z = new ZipArchive(); $z->open($f, ZipArchive::OVERWRITE);
+        $z->addFromString($corrida . '/evidencia/resumen.txt', "WIZLINK · Prueba 6 · RESUMEN DE LA CORRIDA\nDuración: 1 min 2 s\nResultado: TERMINÓ ($nota)\n");
+        $z->addFromString('bitacoras_wizlink/corrida_automatica.txt', "inventada: $nota\n");
+        $z->close();
+        return (string)file_get_contents($f);
+    } finally {
+        @unlink($f);
+    }
 }
 
 function h_e2e(string $s): string { return htmlspecialchars($s, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8'); }
@@ -378,6 +382,36 @@ foreach (['../config', '2026-11-19_00.59/../x', 'x'] as $cl) {
 }
 $bz = pedir('GET', '/bajar.php?c=' . rawurlencode($clave));
 ok($bz['codigo'] === 200 && hash('sha256', $bz['cuerpo']) === $sha, 'el .zip se baja idéntico');
+
+// La corrida automática en pausa (Iván, 20-nov: D): la corrida más nueva trae el estado de WizLink con la pausa, y la lista
+// lo dice arriba, con el motivo y qué hacer. La siguiente sin pausa lo quita.
+$conEstado = function (string $nombre, string $estado) use ($subir, $cabBuena): array {
+    $f = tempnam(sys_get_temp_dir(), 'z');
+    try {
+        file_put_contents($f, zip_de_prueba($nombre, 'con el estado de la corrida automática'));
+        $z = new ZipArchive(); $z->open($f); $z->addFromString('bitacoras_wizlink/corrida_automatica_estado.txt', $estado); $z->close();
+        $dz = (string)file_get_contents($f);
+    } finally {
+        @unlink($f);
+    }
+    return $subir(array_merge(array_slice($cabBuena, 0, 2), ['X-WizLink-Corrida: ' . $nombre, 'X-WizLink-Sha256: ' . hash('sha256', $dz)]), $dz);
+};
+$enPausa = date('Y-m-d H.i', time() - 60);
+$r = $conEstado($enPausa, "\xEF\xBB\xBF# inventado\r\npausa=WizLink se detuvo sin teclear nada más: <script>prueba</script>\r\nque_hacer=Presione «Reanudar» para seguir con el horario.\r\n");
+ok($r['codigo'] === 200, "pausa: la corrida con la pausa se recibe ({$r['codigo']})");
+$l = pedir('GET', '/');
+ok(str_contains($l['cuerpo'], 'reportó la corrida automática en pausa') && str_contains($l['cuerpo'], 'aviso-error') && str_contains($l['cuerpo'], 'Presione «Reanudar» para seguir con el horario.'), 'pausa: la lista lo dice arriba, con qué hacer');
+ok(str_contains($l['cuerpo'], '&lt;script&gt;prueba') && !str_contains($l['cuerpo'], '<script>prueba'), 'pausa: el motivo va escapado');
+ok(!str_contains($l['cuerpo'], 'Sin corridas nuevas'), 'pausa: con la corrida recién llegada no avisa de atrasadas');
+// Los datos con el formato de la versión 1.4.0 no traen «pausa»: se lee del .zip guardado (Codex, PR #7)
+$clPausa = clave_e2e($enPausa);
+$jsonPausa = $privado . '/corridas/' . substr($clPausa, 0, 7) . '/' . $clPausa . '.json';
+$dj = json_decode((string)file_get_contents($jsonPausa), true);
+unset($dj['pausa'], $dj['que_hacer']);
+file_put_contents($jsonPausa, json_encode($dj));
+ok(str_contains(pedir('GET', '/')['cuerpo'], 'reportó la corrida automática en pausa'), 'pausa: con los datos de la versión 1.4.0, la lee del .zip');
+$r = $conEstado(date('Y-m-d H.i'), "pausa=\r\nque_hacer=\r\n");
+ok($r['codigo'] === 200 && !str_contains(pedir('GET', '/')['cuerpo'], 'reportó la corrida automática en pausa'), 'pausa: la corrida siguiente, sin pausa, lo quita');
 
 // ------------------------------------------------------------------ salir
 $fs = preg_match('/action="\/salir.php"><input type="hidden" name="ficha" value="([0-9a-f]{64})"/', $l['cuerpo'], $m) ? $m[1] : '';
