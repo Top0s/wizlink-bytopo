@@ -391,6 +391,20 @@ function datos_de_zip(string $archivo, string $corrida, string $version, int $by
     return $d;
 }
 
+/** La pausa que trae el .zip de una corrida guardada (para los datos de la versión 1.4.0, que no la tenían). */
+function pausa_de_zip(string $archivo): array
+{
+    if (!class_exists('ZipArchive') || !is_file($archivo)) return ['', ''];
+    $z = new ZipArchive();
+    if ($z->open($archivo) !== true) return ['', ''];
+    try {
+        $estado = $z->getFromName('bitacoras_wizlink/corrida_automatica_estado.txt', 65536);
+        return is_string($estado) ? pausa_de_estado($estado) : ['', ''];
+    } finally {
+        $z->close();
+    }
+}
+
 /**
  * La pausa de la corrida automática en su archivo de estado (`corrida_automatica_estado.txt` de WizLink: una línea
  * `clave=valor` por dato). Devuelve [pausa, que_hacer]; los dos vacíos si no está en pausa.

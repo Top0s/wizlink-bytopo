@@ -102,17 +102,47 @@ function aviso_automatica(?array $ultima, int $ahora): string
 {
     if ($ultima === null) return '';
     $desde = momento_de($ultima['clave']);
+    // Los datos que guardó la versión 1.4.0 no traen la pausa, aunque su .zip ya la tenga: se lee del .zip (Codex, PR #7)
+    if (!array_key_exists('pausa', $ultima)) [$ultima['pausa'], $ultima['que_hacer']] = pausa_de_zip(ruta_zip($ultima['clave']));
+    $html = '';
+    // La pausa es la que traía el último respaldo: WizLink no manda uno al pausar ni al reanudar, así que se dice de cuándo es
     if (($ultima['pausa'] ?? '') !== '') {
-        return aviso('error', '<p><strong>Corrida automática en pausa</strong> desde la corrida de ' . h(cuando_corto($desde, $ahora)) . ' '
-            . 'Mientras siga así, WizLink no corre ninguna corrida más.</p>'
-            . '<p>Motivo: ' . h($ultima['pausa']) . '</p>'
-            . (($ultima['que_hacer'] ?? '') !== '' ? '<p>Qué hacer en la máquina virtual: ' . h($ultima['que_hacer']) . '</p>' : ''));
+        $recibida = (int)($ultima['recibida'] ?? $desde);
+        $html .= aviso('error', '<p><strong>El último respaldo reportó la corrida automática en pausa.</strong> '
+            . 'Corrida de ' . h(cuando_corto($desde, $ahora)) . ', recibida ' . h(cuando_corto($recibida, $ahora)) . ' '
+            . 'Mientras siga en pausa, WizLink no corre ninguna corrida más. Si ya se reanudó, este aviso se quita con el próximo respaldo.</p>'
+            . '<p>Motivo que reportó WizLink: ' . h($ultima['pausa']) . '</p>'
+            . '<p>Qué hacer en la máquina virtual: ' . h(que_hacer_conocido($ultima['que_hacer'] ?? '')) . '</p>');
     }
+    // El atraso se mira aparte: una pausa vieja que ya se reanudó, sin corridas nuevas, también avisa (Codex, PR #7). Cuenta
+    // desde la hora programada: una corrida que empezó antes no es la de ese turno.
     $debio = ultima_que_debio_llegar($ahora);
-    if ($debio === null || $desde >= $debio['ts'] - 60) return '';
-    return aviso('atencion', '<p><strong>Sin corridas nuevas desde la de ' . h(cuando_corto($desde, $ahora)) . '</strong> '
-        . 'Según el horario, la corrida ' . h(TIPOS_CORRIDA[$debio['tipo']]['nombre']) . ' de ' . h(cuando_corto($debio['ts'], $ahora)) . ', ya debió llegar. '
-        . 'Revise WizLink y BlueZone en la máquina virtual.</p>');
+    if ($debio !== null && $desde < $debio['ts'])
+        $html .= aviso('atencion', '<p><strong>Sin corridas nuevas desde la de ' . h(cuando_corto($desde, $ahora)) . '</strong> '
+            . 'Según el horario, la corrida ' . h(TIPOS_CORRIDA[$debio['tipo']]['nombre']) . ' de ' . h(cuando_corto($debio['ts'], $ahora)) . ', ya debió llegar. '
+            . 'Revise WizLink y BlueZone en la máquina virtual.</p>');
+    return $html;
+}
+
+/**
+ * Lo que dice el aviso sobre qué hacer: solo uno de los textos que WizLink escribe (CorridaAutomatica.cs), tal cual. Lo
+ * demás no se muestra como instrucción del sitio, porque llega con la llave de subida (Codex, PR #7): una indicación fija.
+ */
+function que_hacer_conocido(string $texto): string
+{
+    $conocidos = [
+        'Corrija lo que falta y presione «Reanudar».',
+        'Si Wizard pide una contraseña nueva, cámbiela en BlueZone. Después, inicie sesión y marque «Recordar en esta PC».',
+        'Revise la ventana de Wizard, déjela en la pantalla inicial y presione «Reanudar».',
+        'Presione «Reanudar» para seguir con el horario.',
+        'Avise a Informática. Para reanudar, inicie sesión y marque «Recordar en esta PC».',
+        'La sesión de Wizard quedó abierta: ciérrela a mano (/RCL) y presione «Reanudar».',
+        'Ciérrela a mano (/RCL) y presione «Reanudar».',
+        'Revise que BlueZone esté conectado (Connect) y en la pantalla de VTAM. Después presione «Reanudar».',
+        'Revise BlueZone: puede estar congelado o con un aviso abierto. Después presione «Reanudar»: la corrida vuelve a empezar desde el comienzo.',
+        'Revise la corrida automática y presione «Reanudar» para seguir con el horario.',
+    ];
+    return in_array($texto, $conocidos, true) ? $texto : 'Revise el estado de la corrida automática directamente en WizLink.';
 }
 
 /** «hoy, 12:00 a. m.», «ayer, 10:00 p. m.» o «18 nov, 3:00 p. m.». Termina en «m.»: no lleva otro punto detrás. */

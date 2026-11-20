@@ -21,10 +21,13 @@ aquí un .zip con su carpeta completa.
   la próxima corrida arriba): el de hoy, con la próxima marcada, y el otro (día normal o día 1 del mes) a un clic. Es una
   copia del horario fijo de WizLink (`Horario` en `app/nucleo/CorridaAutomatica.cs`): si allá cambia, se cambia también
   en `lib/horario.php`.
-- **Avisa arriba de la lista si la corrida automática necesita a alguien** (Iván, 20-nov: D): «Corrida automática en
-  pausa», con el motivo y qué hacer, si la corrida más nueva trae la pausa en el estado de WizLink
-  (`bitacoras_wizlink/corrida_automatica_estado.txt` dentro del .zip; solo se leen `pausa` y `que_hacer`); o «Sin
-  corridas nuevas» si, según el horario, ya pasó lo que dura una corrida y una hora más sin que llegue ninguna.
+- **Avisa arriba de la lista si la corrida automática necesita a alguien** (Iván, 20-nov: D): «El último respaldo
+  reportó la corrida automática en pausa», con cuándo llegó, el motivo y qué hacer, si la corrida más nueva trae la pausa
+  en el estado de WizLink (`bitacoras_wizlink/corrida_automatica_estado.txt` dentro del .zip; solo se leen `pausa` y
+  `que_hacer`). Es el estado de ese respaldo: WizLink no manda uno al pausar ni al reanudar. «Qué hacer» solo muestra
+  los textos que WizLink escribe; cualquier otro se cambia por «Revise el estado de la corrida automática directamente
+  en WizLink». Aparte, «Sin corridas nuevas» si, según el horario, ya pasó lo que dura una corrida y una hora más sin
+  que llegue ninguna que haya empezado a esa hora o después.
 - **Se instala** en el teléfono como app desde Chrome (⋮ › Instalar app). No tiene service worker: no guarda nada en el
   teléfono.
 
