@@ -9,6 +9,8 @@
 declare(strict_types=1);
 
 require_once __DIR__ . '/base.php';
+require_once __DIR__ . '/almacen.php';
+require_once __DIR__ . '/vista.php';
 
 /** Cada tipo de corrida: su nombre corto (Iván, 19-nov: B2; en WizLink se llaman Corrida Operativa, Extendida 120 y
  *  Extendida 365), su símbolo (nunca solo el color) y cuánto suele durar. */
@@ -73,6 +75,53 @@ function proxima_corrida(int $ahora): array
     }
     // No se llega aquí (mañana siempre tiene corridas), pero por si acaso: el horario de hoy sin marcar nada.
     return ['dia' => $hoy, 'es_hoy' => true, 'primero' => date('j', $hoy) === '1', 'fila' => -1, 'ts' => 0, 'tipo' => 'op'];
+}
+
+/**
+ * La corrida del horario más reciente que ya debió llegar a $ahora: empezó, pasó lo que suele durar y una hora más
+ * (Iván, 20-nov: D). Mira hoy y ayer. Devuelve su timestamp y su tipo, o null.
+ */
+function ultima_que_debio_llegar(int $ahora): ?array
+{
+    $mejor = null;
+    foreach ([(int)strtotime('yesterday', $ahora), (int)strtotime('today', $ahora)] as $dia) {
+        foreach (horario_del_dia(date('j', $dia) === '1') as [$h, $m, $tipo]) {
+            $ts = (int)strtotime(sprintf('%s %02d:%02d', date('Y-m-d', $dia), $h, $m));
+            if ($ts + (TIPOS_CORRIDA[$tipo]['minutos'] + 60) * 60 <= $ahora && ($mejor === null || $ts > $mejor['ts'])) $mejor = ['ts' => $ts, 'tipo' => $tipo];
+        }
+    }
+    return $mejor;
+}
+
+/**
+ * El aviso de arriba de la lista cuando la corrida automática necesita a alguien (Iván, 20-nov: D): en pausa, según la
+ * última corrida recibida; o sin corridas nuevas aunque el horario dice que ya debió llegar otra. '' si todo va bien.
+ * $ultima: los datos de la corrida más nueva (o null si no hay ninguna).
+ */
+function aviso_automatica(?array $ultima, int $ahora): string
+{
+    if ($ultima === null) return '';
+    $desde = momento_de($ultima['clave']);
+    if (($ultima['pausa'] ?? '') !== '') {
+        return aviso('error', '<p><strong>Corrida automática en pausa</strong> desde la corrida de ' . h(cuando_corto($desde, $ahora)) . ' '
+            . 'Mientras siga así, WizLink no corre ninguna corrida más.</p>'
+            . '<p>Motivo: ' . h($ultima['pausa']) . '</p>'
+            . (($ultima['que_hacer'] ?? '') !== '' ? '<p>Qué hacer en la máquina virtual: ' . h($ultima['que_hacer']) . '</p>' : ''));
+    }
+    $debio = ultima_que_debio_llegar($ahora);
+    if ($debio === null || $desde >= $debio['ts'] - 60) return '';
+    return aviso('atencion', '<p><strong>Sin corridas nuevas desde la de ' . h(cuando_corto($desde, $ahora)) . '</strong> '
+        . 'Según el horario, la corrida ' . h(TIPOS_CORRIDA[$debio['tipo']]['nombre']) . ' de ' . h(cuando_corto($debio['ts'], $ahora)) . ', ya debió llegar. '
+        . 'Revise WizLink y BlueZone en la máquina virtual.</p>');
+}
+
+/** «hoy, 12:00 a. m.», «ayer, 10:00 p. m.» o «18 nov, 3:00 p. m.». Termina en «m.»: no lleva otro punto detrás. */
+function cuando_corto(int $ts, int $ahora): string
+{
+    if (date('Y-m-d', $ts) === date('Y-m-d', $ahora)) $d = 'hoy';
+    elseif (date('Y-m-d', $ts) === date('Y-m-d', (int)strtotime('yesterday', $ahora))) $d = 'ayer';
+    else $d = fecha_corta($ts);
+    return $d . ', ' . hora($ts);
 }
 
 /** La línea corta para el teléfono, arriba de la lista: la próxima corrida y el enlace al horario completo. */

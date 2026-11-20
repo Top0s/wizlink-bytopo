@@ -8,4 +8,5 @@ aqui="$(cd "$(dirname "$0")" && pwd)"
 privado="${3:-/srv/wizlink/wizlink-private}"
 rm -rf "$privado/estado" "$privado/corridas" "$privado/registro"
 mkdir -p "$privado" && chown -R www-data:www-data "$privado" 2>/dev/null || true
+php "$aqui/avisos.php"
 php "$aqui/e2e.php" "$1" "$2" "$privado"

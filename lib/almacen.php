@@ -341,6 +341,8 @@ function datos_de_zip(string $archivo, string $corrida, string $version, int $by
         'consultas' => 0,
         'revisar' => 0,
         'archivos' => 0,
+        'pausa' => '',
+        'que_hacer' => '',
     ];
     if (!class_exists('ZipArchive')) return $d;
     $z = new ZipArchive();
@@ -361,6 +363,10 @@ function datos_de_zip(string $archivo, string $corrida, string $version, int $by
                 }
             }
         }
+        // La corrida automática al terminar esta corrida (Iván, 20-nov: D): si quedó en pausa, por qué y qué hacer. Solo esas
+        // dos líneas; el archivo nunca trae la contraseña ni el usuario de Wizard.
+        $estado = $z->getFromName('bitacoras_wizlink/corrida_automatica_estado.txt', 65536);
+        if (is_string($estado)) [$d['pausa'], $d['que_hacer']] = pausa_de_estado($estado);
         // El control: una fila por consulta, con su estado (OK, REVISAR, NO SE PUDO, SE DETUVO, NO SE CORRIÓ)
         for ($i = 0; $i < $z->numFiles; $i++) {
             $n = (string)$z->getNameIndex($i);
@@ -383,6 +389,20 @@ function datos_de_zip(string $archivo, string $corrida, string $version, int $by
     }
     if ($d['resultado'] === '') $d['resultado'] = 'sin_resumen';
     return $d;
+}
+
+/**
+ * La pausa de la corrida automática en su archivo de estado (`corrida_automatica_estado.txt` de WizLink: una línea
+ * `clave=valor` por dato). Devuelve [pausa, que_hacer]; los dos vacíos si no está en pausa.
+ */
+function pausa_de_estado(string $texto): array
+{
+    $v = ['pausa' => '', 'que_hacer' => ''];
+    foreach (preg_split('/\r?\n/', preg_replace('/^\xEF\xBB\xBF/', '', $texto)) as $l) {
+        if (preg_match('/^(pausa|que_hacer)=(.*)$/u', $l, $m)) $v[$m[1]] = mb_substr(trim($m[2]), 0, 400);
+    }
+    if ($v['pausa'] === '') $v['que_hacer'] = '';
+    return [$v['pausa'], $v['que_hacer']];
 }
 
 /** Todas las corridas guardadas, la más nueva primero. */
