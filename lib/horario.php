@@ -180,3 +180,57 @@ function panel_horario(int $ahora): string
         . '<p class="panel-nota">«Termina» es aproximado. Si una hora llega durante otra corrida, espera a que esa termine.</p>'
         . '</aside>';
 }
+
+/**
+ * Las corridas del horario de un día y cómo salió cada una (Iván, 22-nov: R2, «Hoy, turno por turno»). A cada hora del
+ * horario le toca la primera corrida que empezó desde 10 minutos antes de esa hora y hasta 10 minutos antes de la
+ * siguiente (una hora que llega durante otra corrida espera y empieza tarde). Devuelve una fila por hora:
+ * ['ts', 'tipo', 'estado' (ok, rev, det, sin, falta, curso, pend), 'corrida' (los datos, o null)].
+ * $corridas: las de listar_corridas(), en cualquier orden.
+ */
+function turnos_del_dia(int $dia, array $corridas, int $ahora): array
+{
+    $horas = [];
+    foreach (horario_del_dia(date('j', $dia) === '1') as [$h, $m, $tipo]) {
+        $horas[] = ['ts' => (int)strtotime(sprintf('%s %02d:%02d', date('Y-m-d', $dia), $h, $m)), 'tipo' => $tipo];
+    }
+    $manana = (int)strtotime('tomorrow', $dia);
+    $porMomento = [];
+    foreach ($corridas as $d) {
+        $t = momento_de((string)$d['clave']);
+        if ($t >= $dia - 600 && $t < $manana) $porMomento[] = [$t, $d];
+    }
+    usort($porMomento, fn($a, $b) => $a[0] <=> $b[0]);
+    $filas = [];
+    foreach ($horas as $i => $hr) {
+        $desde = $hr['ts'] - 600;
+        $hasta = isset($horas[$i + 1]) ? $horas[$i + 1]['ts'] - 600 : $manana - 600;
+        $d = null;
+        foreach ($porMomento as [$t, $x]) if ($t >= $desde && $t < $hasta) { $d = $x; break; }
+        if ($d !== null) {
+            $r = $d['resultado'] ?? '';
+            $estado = $r === 'detuvo' ? 'det' : ($r === 'sin_resumen' ? 'sin' : ((int)($d['revisar'] ?? 0) > 0 ? 'rev' : 'ok'));
+        } elseif ($ahora >= $hr['ts'] + (TIPOS_CORRIDA[$hr['tipo']]['minutos'] + 60) * 60) {
+            $estado = 'falta';
+        } elseif ($ahora >= $hr['ts']) {
+            $estado = 'curso';
+        } else {
+            $estado = 'pend';
+        }
+        $filas[] = ['ts' => $hr['ts'], 'tipo' => $hr['tipo'], 'estado' => $estado, 'corrida' => $d];
+    }
+    return $filas;
+}
+
+/** Cómo se dice y se marca cada estado de un turno: símbolo y palabra, nunca solo el color. */
+const ESTADOS_TURNO = [
+    'ok' => ['✓', 'Terminó'], 'rev' => ['!', 'Revisar'], 'det' => ['■', 'Se detuvo'], 'sin' => ['?', 'Sin resumen'],
+    'falta' => ['✕', 'No llegó'], 'curso' => ['…', 'En curso'], 'pend' => ['○', 'Pendiente'],
+];
+
+/** «12:00a», «10:15a» o «3:00p»: la hora corta de un turno. */
+function hora_turno(int $ts): string
+{
+    $h = (int)date('G', $ts);
+    return ($h % 12 === 0 ? 12 : $h % 12) . ':' . date('i', $ts) . ($h < 12 ? 'a' : 'p');
+}

@@ -3,6 +3,7 @@
 // Uso: php e2e.php <zip de una corrida> <nombre de la corrida> <carpeta wizlink-private de la copia>
 declare(strict_types=1);
 
+require __DIR__ . '/corrida_inventada.php';
 $zip = $argv[1]; $corrida = $argv[2]; $privado = rtrim($argv[3], '/');
 $base = 'https://wizlink.bytopo.net';
 $tarro = tempnam(sys_get_temp_dir(), 'tarro');
@@ -94,7 +95,7 @@ function b32d(string $t): string { $a = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567'; $bit
 function codigo(string $sec, int $paso): string { $h = hash_hmac('sha1', pack('N*', 0, $paso), $sec, true); $o = ord($h[19]) & 15; $n = ((ord($h[$o]) & 127) << 24) | (ord($h[$o + 1]) << 16) | (ord($h[$o + 2]) << 8) | ord($h[$o + 3]); return str_pad((string)($n % 1000000), 6, '0', STR_PAD_LEFT); }
 
 // ------------------------------------------------------------------ sin entrar
-foreach (['/', '/corrida.php?c=2026-11-19_00.59', '/archivo.php?c=2026-11-19_00.59&f=x', '/bajar.php?c=2026-11-19_00.59', '/llave.php'] as $r) {
+foreach (['/', '/tendencias.php', '/problemas.php', '/corrida.php?c=2026-11-19_00.59', '/archivo.php?c=2026-11-19_00.59&f=x', '/bajar.php?c=2026-11-19_00.59', '/llave.php'] as $r) {
     $x = pedir('GET', $r, ['sin_cookies' => true]);
     ok($x['codigo'] === 302 && str_contains($x['cab'], 'Location: /entrar.php'), "sin entrar, $r manda a la entrada ({$x['codigo']})");
 }
@@ -160,11 +161,21 @@ $r = pedir('POST', '/entrar.php?paso=codigo', ['cuerpo' => http_build_query(['fi
 ok($r['codigo'] === 302 && str_contains($r['cab'], 'Location: /'), "el código correcto entra ({$r['codigo']})");
 $l = pedir('GET', '/');
 ok($l['codigo'] === 200 && str_contains($l['cuerpo'], 'Corridas recibidas'), 'la lista se abre');
-// El horario de las corridas (Iván, 19-nov: A1, B2, C1): un panel, una sola «Próxima», las 12 corridas de un día normal
-// (11 el día 1) y el otro horario a un clic, con los nombres cortos
-ok(substr_count($l['cuerpo'], 'id="horario"') === 1 && substr_count($l['cuerpo'], 'class="horario-proxima"') === 1, 'horario: el panel con una sola próxima corrida');
-ok(substr_count($l['cuerpo'], '<tr') === 2 + 12 + 11 && str_contains($l['cuerpo'], 'Ext. 365') && str_contains($l['cuerpo'], 'Ext. 120') && str_contains($l['cuerpo'], 'Normal</span>'), 'horario: las dos tablas, día normal y día 1');
-ok(str_contains($l['cuerpo'], 'Próxima corrida:') && str_contains($l['cuerpo'], 'href="#horario"'), 'horario: la línea de la próxima corrida para el teléfono');
+// Las pestañas en la barra de arriba (Iván, 22-nov: R6) y, en «Corridas», el día turno por turno (R2): las 12 corridas de un
+// día normal (11 el día 1)
+ok(str_contains($l['cuerpo'], 'href="/" aria-current="page">Corridas</a>') && str_contains($l['cuerpo'], 'href="/tendencias.php">Tendencias</a>')
+   && str_contains($l['cuerpo'], 'href="/problemas.php">Problemas') && str_contains($l['cuerpo'], '<span class="corta">Llave</span>'), 'pestañas: Corridas, Tendencias, Problemas y Llave, arriba');
+ok(in_array(substr_count($l['cuerpo'], '<li class="turno '), [11, 12], true) && str_contains($l['cuerpo'], 'Hoy, turno por turno'), 'turnos: las corridas del horario de hoy');
+ok(!str_contains($l['cuerpo'], 'id="horario"') && !str_contains($l['cuerpo'], 'class="pestanas"'), 'turnos: sin el panel del horario ni otra fila de pestañas');
+// El horario de las corridas (Iván, 19-nov: A1, B2, C1), ahora en «Problemas»: un panel, una sola «Próxima», las 12
+// corridas de un día normal (11 el día 1) y el otro horario a un clic, con los nombres cortos
+$pr = pedir('GET', '/problemas.php');
+ok($pr['codigo'] === 200 && str_contains($pr['cuerpo'], 'href="/problemas.php" aria-current="page"'), 'problemas: se abre, con su pestaña marcada');
+ok(substr_count($pr['cuerpo'], 'id="horario"') === 1 && substr_count($pr['cuerpo'], 'class="horario-proxima"') === 1, 'horario: el panel con una sola próxima corrida');
+ok(substr_count($pr['cuerpo'], '<tr') === 2 + 12 + 11 && str_contains($pr['cuerpo'], 'Ext. 365') && str_contains($pr['cuerpo'], 'Ext. 120') && str_contains($pr['cuerpo'], 'Normal</span>'), 'horario: las dos tablas, día normal y día 1');
+ok(str_contains($pr['cuerpo'], 'La corrida más nueva no trae ningún problema') || str_contains($pr['cuerpo'], 'Todavía no llegó ninguna corrida'), 'problemas: sin corridas, nada abierto');
+$te = pedir('GET', '/tendencias.php');
+ok($te['codigo'] === 200 && str_contains($te['cuerpo'], 'Duración real, Operativa') && str_contains($te['cuerpo'], 'Todavía no hay corridas con duración'), 'tendencias: se abre aun sin corridas');
 ok(str_contains($l['cuerpo'], 'Todavía no hay llave de subida'), 'avisa que falta la llave');
 
 // ------------------------------------------------------------------ la llave de subida
@@ -243,13 +254,34 @@ $z = new ZipArchive(); $z->open($zv, ZipArchive::CREATE); $z->addFromString($vie
 $dv = file_get_contents($zv);
 ok($subir(array_merge(array_slice($cabBuena, 0, 2), ['X-WizLink-Corrida: ' . $vieja, 'X-WizLink-Sha256: ' . hash('sha256', $dv)]), $dv)['codigo'] === 200, 'subir: una corrida vieja se recibe');
 $clVieja = str_replace(' ', '_', $vieja);
-ok(!is_file($privado . '/corridas/' . substr($clVieja, 0, 7) . '/' . $clVieja . '.zip'), 'la limpieza borra la de más de 30 días');
+ok(!is_file($privado . '/corridas/' . substr($clVieja, 0, 7) . '/' . $clVieja . '.zip'), 'la limpieza borra el .zip de la de más de 7 días');
+ok(is_file($privado . '/corridas/' . substr($clVieja, 0, 7) . '/' . $clVieja . '.json'), 'la limpieza deja su registro (Iván, 22-nov: B1)');
 ok(!is_file($antes3 . '.zip') && is_file($privado . '/corridas/' . substr($claveP, 0, 7) . '/' . $claveP . '_3.zip') && is_file($privado . '/corridas/' . substr($claveP, 0, 7) . '/' . $claveP . '_3.json'),
    'la limpieza renombra una «(3)» guardada con el nombre de antes, con sus datos');
 $vieja2 = $vieja . ' (2)';
 $dv2 = zip_de_prueba($vieja2, 'vieja del mismo minuto');
 ok($subir(array_merge(array_slice($cabBuena, 0, 2), ['X-WizLink-Corrida: ' . $vieja2, 'X-WizLink-Sha256: ' . hash('sha256', $dv2)]), $dv2)['codigo'] === 200, 'subir: una «(2)» vieja se recibe');
-ok(count(glob($privado . '/corridas/' . substr($clVieja, 0, 7) . '/' . $clVieja . '*') ?: []) === 0, 'la limpieza también borra la «(2)» de más de 30 días');
+ok(count(glob($privado . '/corridas/' . substr($clVieja, 0, 7) . '/' . $clVieja . '*.zip') ?: []) === 0, 'la limpieza también borra el .zip de la «(2)» de más de 7 días');
+// Una de hace 8 días: su .zip se borra; una de hace 6, no. Un registro de hace más de un año se borra.
+$ocho = date('Y-m-d H.i', time() - 8 * 86400); $seis = date('Y-m-d H.i', time() - 6 * 86400 + 3600);
+foreach ([$ocho, $seis] as $n) { $dn = corrida_inventada($n, ['casos' => $n === $ocho ? [CASO_FLOTA, ['R', 'contrato 1234567 · REVISAR', 'la página 1 no trae impuesto']] : [CASO_FLOTA]]); $subir(array_merge(array_slice($cabBuena, 0, 2), ['X-WizLink-Corrida: ' . $n, 'X-WizLink-Sha256: ' . hash('sha256', $dn)]), $dn); }
+$ruta = fn(string $n, string $ext) => $privado . '/corridas/' . substr(clave_e2e($n), 0, 7) . '/' . clave_e2e($n) . $ext;
+ok(!is_file($ruta($ocho, '.zip')) && is_file($ruta($ocho, '.json')) && is_file($ruta($seis, '.zip')), 'la limpieza: a los 7 días se borra el .zip, antes no');
+$regOcho = json_decode((string)file_get_contents($ruta($ocho, '.json')), true);
+ok(($regOcho['forma'] ?? 0) === 2 && str_contains(json_encode($regOcho['casos'] ?? [], JSON_UNESCAPED_UNICODE), 'no coincide con la columna TOT'), 'el registro guarda el diagnóstico en palabras');
+ok(($regOcho['tapado'] ?? false) === true && str_contains(json_encode($regOcho['casos'] ?? [], JSON_UNESCAPED_UNICODE), 'contrato 9999999') && !str_contains((string)file_get_contents($ruta($ocho, '.json')), '1234567'), 'el registro sin .zip tapa el número de contrato');
+$anio = date('Y-m-d H.i', time() - 400 * 86400);
+@mkdir(dirname($ruta($anio, '.json')), 0700, true);
+file_put_contents($ruta($anio, '.json'), json_encode(['corrida' => $anio, 'recibida' => time() - 400 * 86400, 'resultado' => 'termino', 'forma' => 2]));
+@chown(dirname($ruta($anio, '.json')), 'www-data'); @chown($ruta($anio, '.json'), 'www-data');
+$dn = corrida_inventada($seis . ' (2)', []); $subir(array_merge(array_slice($cabBuena, 0, 2), ['X-WizLink-Corrida: ' . $seis . ' (2)', 'X-WizLink-Sha256: ' . hash('sha256', $dn)]), $dn);
+ok(!is_file($ruta($anio, '.json')), 'la limpieza borra el registro de más de un año');
+$mesOcho = substr(clave_e2e($ocho), 0, 7);
+$lm = pedir('GET', '/?mes=' . $mesOcho);
+ok($lm['codigo'] === 200 && str_contains($lm['cuerpo'], '/corrida.php?c=' . rawurlencode(clave_e2e($ocho))) && str_contains($lm['cuerpo'], 'queda el registro'), 'el registro del mes muestra la corrida sin su .zip');
+$co = pedir('GET', '/corrida.php?c=' . rawurlencode(clave_e2e($ocho)));
+ok($co['codigo'] === 200 && str_contains($co['cuerpo'], 'se borró a los 7 días') && str_contains($co['cuerpo'], 'La flota no cuadró') && !str_contains($co['cuerpo'], 'Bajar la corrida completa'), 'una corrida con solo su registro se abre, explicada y sin el .zip');
+ok(pedir('GET', '/bajar.php?c=' . rawurlencode(clave_e2e($ocho)))['codigo'] === 404, 'el .zip borrado ya no se baja');
 
 // Si algo falla al guardar, nunca queda una corrida a medias, y el reintento de WizLink la guarda entera
 $cf = substr($corrida, 0, 10) . ' 00.01'; $clf = clave_e2e($cf); $dirF = $privado . '/corridas/' . substr($clf, 0, 7);
@@ -382,6 +414,29 @@ foreach (['../config', '2026-11-19_00.59/../x', 'x'] as $cl) {
 }
 $bz = pedir('GET', '/bajar.php?c=' . rawurlencode($clave));
 ok($bz['codigo'] === 200 && hash('sha256', $bz['cuerpo']) === $sha, 'el .zip se baja idéntico');
+
+// El diagnóstico en palabras (Iván, 22-nov: R6): una Extendida 120 con la flota y la impresora en revisar
+$ext = date('Y-m-d H.i', time() - 120);
+$de = corrida_inventada($ext, ['tipo' => 'e120', 'segundos' => 4472, 'casos' => [CASO_FLOTA, CASO_IMPRESORA, CASO_IMPRESORA2]]);
+ok($subir(array_merge(array_slice($cabBuena, 0, 2), ['X-WizLink-Corrida: ' . $ext, 'X-WizLink-Sha256: ' . hash('sha256', $de)]), $de)['codigo'] === 200, 'explicar: la Extendida 120 se recibe');
+$l = pedir('GET', '/');
+ok(str_contains($l['cuerpo'], 'Extendida 120') && str_contains($l['cuerpo'], 'Duró 1 h 14 min 32 s'), 'explicar: la lista dice el tipo y la duración en horas, minutos y segundos');
+ok(str_contains($l['cuerpo'], 'La impresora P2 de BlueZone no imprimió') && str_contains($l['cuerpo'], 'La flota no cuadró con la línea TOTAL de Wizard'), 'explicar: la lista explica cada corrida');
+ok(!preg_match('/Duró 0 h /', $l['cuerpo']), 'explicar: menos de una hora, sin «0 h»');
+ok(preg_match('/Problemas<span class="cuenta-barra"><span aria-hidden="true">!<\/span>&nbsp;2/', $l['cuerpo']) === 1, 'pestañas: Problemas dice 2 abiertos');
+$pr = pedir('GET', '/problemas.php');
+ok(substr_count($pr['cuerpo'], '<article class="problema') === 2 && str_contains($pr['cuerpo'], 'en 2 sucursales') && str_contains($pr['cuerpo'], 'en MGA 07768, día 22NOV26'), 'problemas: la impresora (2 sucursales) y la flota');
+ok(str_contains($pr['cuerpo'], 'Todas las corridas de hoy') && str_contains($pr['cuerpo'], '1 h 14 min 32 s'), 'problemas: la tabla de hoy');
+$ce = pedir('GET', '/corrida.php?c=' . rawurlencode(clave_e2e($ext)));
+ok(str_contains($ce['cuerpo'], 'Qué pasó') && str_contains($ce['cuerpo'], 'Connected') && str_contains($ce['cuerpo'], 'WizLink dice'), 'la corrida explica qué pasó y qué hacer');
+$te = pedir('GET', '/tendencias.php');
+ok(str_contains($te['cuerpo'], 'Duración real, Extendida 120') && str_contains($te['cuerpo'], '1 h 14 min 32 s') && str_contains($te['cuerpo'], '<svg') && str_contains($te['cuerpo'], 'Consultas en revisar hoy'), 'tendencias: los promedios y las gráficas');
+// Los datos que guardó la versión 1.5.0 (sin tipo ni casos) se rehacen solos del .zip
+$je = $ruta($ext, '.json');
+$dj = json_decode((string)file_get_contents($je), true);
+unset($dj['forma'], $dj['tipo'], $dj['casos'], $dj['segundos']);
+file_put_contents($je, json_encode($dj));
+ok(str_contains(pedir('GET', '/')['cuerpo'], 'Duró 1 h 14 min 32 s') && (json_decode((string)file_get_contents($je), true)['forma'] ?? 0) === 2, 'los datos de la versión 1.5.0 se rehacen del .zip');
 
 // La corrida automática en pausa (Iván, 20-nov: D): la corrida más nueva trae el estado de WizLink con la pausa, y la lista
 // lo dice arriba, con el motivo y qué hacer. La siguiente sin pausa lo quita.

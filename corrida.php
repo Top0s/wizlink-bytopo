@@ -7,18 +7,20 @@ declare(strict_types=1);
 require_once __DIR__ . '/lib/sesion.php';
 require_once __DIR__ . '/lib/almacen.php';
 require_once __DIR__ . '/lib/vista.php';
+require_once __DIR__ . '/lib/explicar.php';
 
 exigir_sesion();
 
 $clave = (string)($_GET['c'] ?? '');
 $datos = clave_valida($clave) ? leer_json(ruta_datos($clave)) : null;
-if ($datos === null || !is_file(ruta_zip($clave))) {
+if ($datos === null) {
     http_response_code(404);
     abrir_pagina('Corrida no encontrada', true);
-    echo '<p><a href="/">‹ Corridas</a></p><h1>Corrida no encontrada</h1><p>Puede haberse borrado por tener más de ' . dias_guardar() . ' días.</p>';
+    echo '<p><a href="/">‹ Corridas</a></p><h1>Corrida no encontrada</h1><p>Su registro puede haberse borrado por tener más de un año.</p>';
     cerrar_pagina();
     exit;
 }
+$hayZip = is_file(ruta_zip($clave));
 $corrida = corrida_de($clave);
 $m = momento_de($clave);
 $sufijo = preg_match('/_(\d+)$/', $clave, $mm) ? ' (' . $mm[1] . ')' : '';   // la segunda del mismo minuto, como en la lista
@@ -26,18 +28,41 @@ $sufijo = preg_match('/_(\d+)$/', $clave, $mm) ? ' (' . $mm[1] . ')' : '';   // 
 abrir_pagina('Corrida ' . $corrida, true);
 echo '<p class="migas"><a href="/">‹ Corridas</a></p>
 <h1>Corrida del ' . h(fecha_hora($m)) . h($sufijo) . '</h1>
-<div class="cabecera-corrida">' . etiqueta_resultado($datos) . '</div>';
+<div class="cabecera-corrida">' . etiqueta_resultado($datos) . ' ' . etiqueta_tipo($datos) . '</div>';
 if (($datos['resultado'] ?? '') === 'detuvo' && ($datos['detalle'] ?? '') !== '') {
     echo aviso('error', '<p>' . h($datos['detalle']) . '</p>');
 }
 echo '<dl class="ficha">
-  <div><dt>Duración</dt><dd>' . h(($datos['duracion'] ?? '') ?: '—') . '</dd></div>
+  <div><dt>Duración</dt><dd>' . h(duracion_texto(segundos_de($datos)) ?: '—') . '</dd></div>
   <div><dt>Consultas</dt><dd>' . (int)($datos['consultas'] ?? 0) . ((int)($datos['revisar'] ?? 0) > 0 ? ' · ' . (int)$datos['revisar'] . ' no OK' : '') . '</dd></div>
   <div><dt>Versión</dt><dd>' . h(($datos['version'] ?? '') ?: '—') . '</dd></div>
   <div><dt>Recibida</dt><dd>' . h(fecha_hora((int)($datos['recibida'] ?? 0))) . '</dd></div>
-  <div><dt>Peso</dt><dd>' . h(peso((int)($datos['bytes'] ?? 0))) . ' comprimida · ' . (int)($datos['archivos'] ?? 0) . ' archivos</dd></div>
-</dl>
-<p><a class="boton" href="/bajar.php?c=' . rawurlencode($clave) . '">Bajar la corrida completa (.zip)</a></p>';
+  <div><dt>Peso</dt><dd>' . h(peso((int)($datos['bytes'] ?? 0))) . ' comprimida · ' . (int)($datos['archivos'] ?? 0) . ' archivos' . ($hayZip ? '' : ' (ya borrada)') . '</dd></div>
+</dl>';
+
+// Lo que pasó, en palabras (explicar.php)
+$casos = casos_explicados($datos);
+echo '<h2>Qué pasó</h2>';
+if (count($casos) === 0) {
+    echo '<p>' . explicacion_corta($datos) . '</p>';
+} else {
+    echo '<div class="problemas">';
+    foreach ($casos as $e) {
+        $donde = donde_texto($e);
+        echo '<article class="problema' . ($e['grave'] ? ' p-grave' : '') . '"><h3>' . h($e['titulo']) . ($donde !== '' ? ' <span class="problema-donde">' . h($donde) . '</span>' : '') . '</h3>'
+            . '<dl><dt>Qué pasó</dt><dd>' . h($e['que']) . '</dd><dt>Qué hacer</dt><dd>' . h($e['hacer']) . '</dd>'
+            . '<dt>WizLink dice</dt><dd class="problema-original">' . h($e['original']) . ($e['motivo'] !== '' ? ' · ' . h($e['motivo']) : '')
+            . ($e['veces'] > 1 ? ' (y ' . ($e['veces'] - 1) . ' casos más como este)' : '') . '</dd></dl></article>';
+    }
+    echo '</div>';
+}
+
+if (!$hayZip) {
+    echo aviso('info', '<p>El .zip de esta corrida se borró a los ' . dias_guardar() . ' días. Queda este registro con el resultado, la duración y el diagnóstico en palabras.</p>');
+    cerrar_pagina();
+    exit;
+}
+echo '<p><a class="boton" href="/bajar.php?c=' . rawurlencode($clave) . '">Bajar la corrida completa (.zip)</a></p>';
 
 $z = abrir_corrida($clave);
 if ($z === null) {

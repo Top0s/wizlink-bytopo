@@ -5,9 +5,10 @@
 declare(strict_types=1);
 
 require_once __DIR__ . '/base.php';
+require_once __DIR__ . '/explicar.php';
 
-/** El principio de la página. $menu: true en las páginas de adentro (con Corridas, Llave de subida y Salir).
- *  $ancha: true en «Corridas», que lleva el panel del horario a la derecha. */
+/** El principio de la página. $menu: true en las páginas de adentro (con Corridas, Tendencias, Problemas, Llave de
+ *  subida y Salir). $ancha: true en las páginas anchas (Corridas, Tendencias y Problemas). */
 function abrir_pagina(string $titulo, bool $menu, string $activa = '', bool $ancha = false): void
 {
     encabezados_seguridad();
@@ -32,10 +33,17 @@ function abrir_pagina(string $titulo, bool $menu, string $activa = '', bool $anc
 <header class="barra">
   <a class="marca" href="/"><img src="/assets/icono-64.png" alt="" width="32" height="32"><span>WizLink <span class="marca-sub">Corridas</span></span></a>';
     if ($menu) {
+        // Las pestañas van en la barra de arriba, sin otra fila abajo (Iván, 22-nov: R6). «Problemas» lleva cuántos hay abiertos.
+        require_once __DIR__ . '/problemas.php';
+        $n = contar_problemas(time());
+        $a = fn(string $id, string $ruta, string $texto) => '<a href="' . $ruta . '"' . ($activa === $id ? ' aria-current="page"' : '') . '>' . $texto . '</a>';
         echo '
   <nav class="menu" aria-label="Menú">
-    <a href="/"' . ($activa === 'corridas' ? ' aria-current="page"' : '') . '>Corridas</a>
-    <a href="/llave.php"' . ($activa === 'llave' ? ' aria-current="page"' : '') . '>Llave de subida</a>
+    ' . $a('corridas', '/', 'Corridas') . '
+    ' . $a('tendencias', '/tendencias.php', 'Tendencias') . '
+    ' . $a('problemas', '/problemas.php', 'Problemas' . ($n > 0 ? '<span class="cuenta-barra"><span aria-hidden="true">!</span>&nbsp;' . $n
+            . '<span class="solo-lector"> ' . ($n === 1 ? 'abierto' : 'abiertos') . '</span></span>' : '')) . '
+    ' . $a('llave', '/llave.php', '<span class="larga">Llave de subida</span><span class="corta">Llave</span>') . '
     <form method="post" action="/salir.php"><input type="hidden" name="ficha" value="' . h(ficha()) . '"><button type="submit" class="enlace-boton">Salir</button></form>
   </nav>';
     }
@@ -71,4 +79,12 @@ function etiqueta_resultado(array $d): string
     if ($r === 'sin_resumen') return '<span class="chip chip-neutro"><span class="simbolo" aria-hidden="true">?</span>Sin resumen</span>';
     if ($revisar > 0) return '<span class="chip chip-atencion"><span class="simbolo" aria-hidden="true">!</span>Terminó · ' . $revisar . ' en revisar</span>';
     return '<span class="chip chip-exito"><span class="simbolo" aria-hidden="true">✓</span>Terminó</span>';
+}
+
+/** La etiqueta del tipo de corrida: «Operativa», «Extendida 120» o «Extendida 365», con su símbolo. */
+function etiqueta_tipo(array $d): string
+{
+    $t = tipo_de($d);
+    $simbolo = ['op' => '●', 'e120' => '◆', 'e365' => '■'][$t];
+    return '<span class="tipo-corrida tipo-' . $t . '"><span aria-hidden="true">' . $simbolo . '</span> ' . h(NOMBRES_TIPO[$t]) . '</span>';
 }
