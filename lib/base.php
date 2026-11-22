@@ -8,7 +8,7 @@
 
 declare(strict_types=1);
 
-const VERSION_SITIO = '1.5.0';
+const VERSION_SITIO = '2.0.0';
 const ZONA_HORARIA = 'America/Managua';   // la hora que se muestra; la bitácora va en UTC
 
 define('PUBLICO', dirname(__DIR__));
@@ -30,12 +30,15 @@ function config(): array
     return $c;
 }
 
-/** Días que se guardan las corridas (30 si la configuración no dice otra cosa; entre 7 y 365). */
+/**
+ * Días que se guarda el .zip de cada corrida: 7 como máximo (Iván, 22-nov: «no quiero cargar infinitamente los archivos»).
+ * La configuración puede bajarlo (de 1 a 7). Después queda solo el registro de la corrida (DIAS_REGISTRO, en almacen.php).
+ */
 function dias_guardar(): int
 {
-    $v = config()['dias_guardar'] ?? 30;
+    $v = config()['dias_guardar'] ?? 7;
     $n = is_int($v) ? $v : (int)$v;
-    return max(7, min(365, $n ?: 30));
+    return max(1, min(7, $n ?: 7));
 }
 
 /** Una carpeta dentro de lo privado; la crea si falta, solo para este usuario del servidor. */

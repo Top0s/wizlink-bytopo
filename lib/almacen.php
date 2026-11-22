@@ -9,11 +9,18 @@
 //     WizLink» de un solo uso (Iván, 19-nov: L4; api/registrar.php), o la crea este sitio y Informática la pega a mano.
 //     Hay una sola llave vigente: la última que llegó reemplaza a la anterior. La que registra WizLink espera la
 //     confirmación de Iván antes de servir (Iván, 19-nov: S1).
-//   - Se borran solas las corridas de más de 30 días (dias_guardar en la configuración).
+//   - El .zip se borra solo a los 7 días (Iván, 22-nov). El .json se queda 1 año más (B1): es el registro de la corrida
+//     (resultado, duración, tipo y el diagnóstico en palabras), unos pocos KB, para seguir viendo qué pasó.
 
 declare(strict_types=1);
 
 require_once __DIR__ . '/base.php';
+require_once __DIR__ . '/explicar.php';
+
+/** Hasta cuándo se guarda el registro de una corrida (su .json) después de borrar su .zip (Iván, 22-nov: B1). */
+const DIAS_REGISTRO = 365;
+/** La forma de los datos de cada corrida: con la 2 llegan el tipo, los segundos y los casos del diagnóstico (sitio 2.0.0). */
+const DATOS_FORMA = 2;
 
 const MAXIMO_BYTES = 64 * 1024 * 1024;              // por corrida, comprimida
 const MAXIMO_DESCOMPRIMIDO = 1024 * 1024 * 1024;    // lo que puede ocupar adentro
@@ -343,6 +350,12 @@ function datos_de_zip(string $archivo, string $corrida, string $version, int $by
         'archivos' => 0,
         'pausa' => '',
         'que_hacer' => '',
+        'forma' => DATOS_FORMA,
+        'tipo' => 'op',
+        'segundos' => -1,
+        'casos' => [],
+        'impresos' => -1,
+        'revisar_por_tipo' => [],
     ];
     if (!class_exists('ZipArchive')) return $d;
     $z = new ZipArchive();
@@ -354,6 +367,9 @@ function datos_de_zip(string $archivo, string $corrida, string $version, int $by
             $resumen = preg_replace('/^\xEF\xBB\xBF/', '', $resumen);
             $lineas = preg_split('/\r?\n/', $resumen);
             if (preg_match('/^WIZLINK · (.+?) · RESUMEN/u', $lineas[0] ?? '', $m)) $d['version'] = mb_substr($m[1], 0, 60);
+            $d['tipo'] = tipo_de_resumen($resumen);
+            $d['segundos'] = segundos_de_resumen($resumen);
+            if (preg_match('/Impresos leídos: (\d+)/u', $resumen, $m)) $d['impresos'] = (int)$m[1];
             foreach ($lineas as $l) {
                 if (preg_match('/Duración: (\d+ min \d+ s)/u', $l, $m)) $d['duracion'] = $m[1];
                 if (str_starts_with($l, 'Resultado: ')) {
@@ -367,7 +383,12 @@ function datos_de_zip(string $archivo, string $corrida, string $version, int $by
         // dos líneas; el archivo nunca trae la contraseña ni el usuario de Wizard.
         $estado = $z->getFromName('bitacoras_wizlink/corrida_automatica_estado.txt', 65536);
         if (is_string($estado)) [$d['pausa'], $d['que_hacer']] = pausa_de_estado($estado);
+        // El diagnóstico por partes de WizLink: solo el título y el primer motivo de cada caso (explicar.php)
+        $diagnostico = $z->getFromName($corrida . '/evidencia/diagnostico.txt', 1024 * 1024);
+        $hayDiagnostico = is_string($diagnostico);
+        if ($hayDiagnostico) $d['casos'] = casos_de_diagnostico($diagnostico);
         // El control: una fila por consulta, con su estado (OK, REVISAR, NO SE PUDO, SE DETUVO, NO SE CORRIÓ)
+        $filasControl = [];
         for ($i = 0; $i < $z->numFiles; $i++) {
             $n = (string)$z->getNameIndex($i);
             if (!preg_match('#^' . preg_quote($corrida, '#') . '/control_[^/]+\.csv$#', $n)) continue;
@@ -380,10 +401,18 @@ function datos_de_zip(string $archivo, string $corrida, string $version, int $by
                 if (trim($f) === '' || $col === false) continue;
                 $c = str_getcsv($f, ',', '"', '');
                 $d['consultas']++;
-                if (($c[$col] ?? 'OK') !== 'OK') $d['revisar']++;
+                if (($c[$col] ?? 'OK') === 'OK') continue;
+                $d['revisar']++;
+                $fila = [];
+                foreach ($cab as $i => $nombre) $fila[$nombre] = (string)($c[$i] ?? '');
+                $tipo = preg_match('/^[a-z]{1,20}$/', $fila['tipo'] ?? '') ? $fila['tipo'] : 'otro';
+                $d['revisar_por_tipo'][$tipo] = ($d['revisar_por_tipo'][$tipo] ?? 0) + 1;
+                if (count($filasControl) < MAXIMO_CASOS) $filasControl[] = $fila;
             }
             break;
         }
+        // Una corrida de antes del diagnóstico (WizLink anterior al 12-nov): los casos salen del control
+        if (!$hayDiagnostico) $d['casos'] = casos_de_control($filasControl);
     } finally {
         $z->close();
     }
@@ -419,20 +448,42 @@ function pausa_de_estado(string $texto): array
     return [$v['pausa'], $v['que_hacer']];
 }
 
-/** Todas las corridas guardadas, la más nueva primero. */
-function listar_corridas(): array
+/**
+ * Todas las corridas guardadas, la más nueva primero: las que tienen su .zip y las que ya solo tienen su registro
+ * ('solo_registro' => true). $desde: solo las que empezaron desde ese momento (0: todas).
+ * Los datos que guardó una versión anterior del sitio (sin tipo, segundos ni casos) se rehacen una vez a partir del .zip.
+ */
+function listar_corridas(int $desde = 0): array
 {
     $l = [];
+    $rehechas = 0;
     foreach (glob(carpeta('corridas') . '/*/*.json') ?: [] as $f) {
         $clave = basename($f, '.json');
-        if (!clave_valida($clave) || !is_file(substr($f, 0, -5) . '.zip')) continue;
+        if (!clave_valida($clave)) continue;
+        if ($desde > 0 && momento_de($clave) < $desde) continue;
         $d = leer_json($f);
         if ($d === null) continue;
+        $zip = substr($f, 0, -5) . '.zip';
+        $hayZip = is_file($zip);
+        // Una vez por corrida, y pocas por visita para que la página no tarde (las demás, en la próxima)
+        if ($hayZip && (int)($d['forma'] ?? 1) < DATOS_FORMA && $rehechas < 40) { $d = rehacer_datos($clave, $d); $rehechas++; }
         $d['clave'] = $clave;
+        $d['solo_registro'] = !$hayZip;
         $l[] = $d;
     }
     usort($l, fn($a, $b) => strcmp($b['clave'], $a['clave']));
     return $l;
+}
+
+/** Los datos de una corrida leídos otra vez de su .zip, sin perder cuándo llegó ni su huella. Se guardan. */
+function rehacer_datos(string $clave, array $antes): array
+{
+    $zip = ruta_zip($clave);
+    if (!is_file($zip) || !class_exists('ZipArchive')) return $antes;
+    $d = datos_de_zip($zip, corrida_de($clave), (string)($antes['version'] ?? ''), (int)($antes['bytes'] ?? filesize($zip)), (string)($antes['sha256'] ?? ''));
+    $d['recibida'] = (int)($antes['recibida'] ?? filemtime($zip));
+    try { escribir_json(ruta_datos($clave), $d); } catch (Throwable $e) { return $antes; }
+    return $d;
 }
 
 /** Lo que ocupan todas las corridas guardadas. */
@@ -464,21 +515,32 @@ function renombrar_nombres_viejos(): int
     return $n;
 }
 
-/** Borra las corridas de más días que los configurados. Devuelve cuántas borró. */
+/**
+ * Borra el .zip de las corridas de más de 7 días (Iván, 22-nov) y deja su registro (.json) un año (B1); antes de borrar
+ * un .zip, su registro se pone al día para que guarde el diagnóstico en palabras. Devuelve cuántos .zip borró.
+ */
 function limpiar_viejas(int $ahora): int
 {
     renombrar_nombres_viejos();
     $limite = $ahora - dias_guardar() * 86400;
+    $limiteRegistro = $ahora - DIAS_REGISTRO * 86400;
     $n = 0;
     foreach (glob(carpeta('corridas') . '/*/*.zip') ?: [] as $f) {
         $clave = basename($f, '.zip');
         if (!clave_valida($clave)) continue;
         $m = momento_de($clave);
         if ($m > 0 && $m < $limite) {
+            $datos = leer_json(substr($f, 0, -4) . '.json');
+            if ($datos !== null && (int)($datos['forma'] ?? 1) < DATOS_FORMA) rehacer_datos($clave, $datos);
             @unlink($f);
-            @unlink(substr($f, 0, -4) . '.json');
             $n++;
         }
+    }
+    foreach (glob(carpeta('corridas') . '/*/*.json') ?: [] as $f) {
+        $clave = basename($f, '.json');
+        if (!clave_valida($clave)) continue;
+        $m = momento_de($clave);
+        if ($m > 0 && $m < $limiteRegistro && !is_file(substr($f, 0, -5) . '.zip')) @unlink($f);
     }
     // Lo que quedó a medio recibir (una subida cortada) se borra al día siguiente
     foreach (glob(carpeta('corridas/recibiendo') . '/*.part') ?: [] as $f) if ((int)@filemtime($f) < $ahora - 86400) @unlink($f);

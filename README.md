@@ -13,11 +13,20 @@ aquí un .zip con su carpeta completa.
 - **Recibe** cada corrida en `api/subir.php`, con la llave de subida de WizLink. Esa llave solo sirve para subir: con ella
   no se puede ver, listar ni bajar nada.
 - **Guarda** cada corrida como un .zip en `wizlink-private/corridas/`, junto a `public_html` y nunca dentro: desde internet
-  solo se llega a ellas entrando. Borra solas las de más de 30 días.
-- **Muestra** la lista de corridas por día (resultado, duración, versión, consultas en REVISAR, peso) y cada corrida con
-  accesos directos al resumen, el diagnóstico, la bitácora y el control, todos sus archivos para ver o bajar, y el .zip
-  completo.
-- **Tiene a la vista el horario de las corridas automáticas** (a la derecha de la lista; en el teléfono, al final, con
+  solo se llega a ellas entrando. Guarda el .zip 7 días (Iván, 22-nov) y después lo borra solo; queda el registro de
+  la corrida (resultado, tipo, duración, consultas y su diagnóstico en palabras) un año, para el registro por mes.
+- **Explica cada corrida a primera vista** (Iván, 22-nov: R6). Lee del .zip el resumen, el diagnóstico y el control
+  (`lib/explicar.php`; sin sacar nada a disco y sin guardar pantallas ni archivos del caso) y dice en palabras qué pasó y
+  qué hacer, con los casos ya conocidos (impresora P2, flota que no cuadra, desconexión de BlueZone, seguridad, Unify…);
+  uno nuevo se muestra con las palabras de WizLink. La duración va en horas, minutos y segundos, sin «0 h» si dura menos
+  de una hora.
+- **Tres pestañas en la barra de arriba:** «Corridas» (las corridas del horario de hoy, turno por turno, y debajo las
+  recibidas por día, cada una con su explicación; los meses anteriores, solo con su registro, en `?mes=AAAA-MM`),
+  «Tendencias» (cuántas corridas de hoy salieron bien, lo que dura cada tipo contra lo estimado y las consultas en
+  revisar por día) y «Problemas» (cada problema de los últimos 7 días juntado, desde cuándo, qué pasó y qué hacer, con
+  su cuenta en la barra; `lib/problemas.php`). Cada corrida tiene accesos directos al resumen, el diagnóstico, la
+  bitácora y el control, todos sus archivos para ver o bajar, y el .zip completo mientras se guarda.
+- **Tiene a la vista el horario de las corridas automáticas** (en «Problemas», a la derecha; en el teléfono, al final, con
   la próxima corrida arriba): el de hoy, con la próxima marcada, y el otro (día normal o día 1 del mes) a un clic. Es una
   copia del horario fijo de WizLink (`Horario` en `app/nucleo/CorridaAutomatica.cs`): si allá cambia, se cambia también
   en `lib/horario.php`.
@@ -74,7 +83,7 @@ Nunca ofrece configurar otra app por su cuenta, porque cualquiera que supiera la
   | `estado/` (lo demás) | Los intentos, los bloqueos y las sesiones |
   | `corridas/` | Las corridas recibidas, por mes |
   | `registro/` | La bitácora del sitio, un archivo por mes, con fecha y hora UTC |
-  | `config.php` (opcional) | Solo para guardar otro número de días: `<?php return ['dias_guardar' => 60];` |
+  | `config.php` (opcional) | Solo para guardar otro número de días: `<?php return ['dias_guardar' => 5];` (de 1 a 7) |
 
 - **Límites de PHP** (hPanel › Avanzado › Configuración de PHP): `post_max_size` y `upload_max_filesize` de 70M o más, para
   corridas de hasta 64 MB comprimidas, y `max_execution_time` de 300. La extensión `zip` encendida (sin ella, el sitio
@@ -120,14 +129,15 @@ sirviéndole a esa versión.
 ## Carpetas
 | Dónde | Qué hay |
 |---|---|
-| `index.php` | La lista de corridas |
+| `index.php` | «Corridas»: el día turno por turno y la lista de corridas explicadas |
+| `tendencias.php`, `problemas.php` | «Tendencias» y «Problemas» |
 | `entrar.php`, `salir.php` | La entrada en dos pasos (y crear el acceso la primera vez) y la salida |
 | `corrida.php`, `archivo.php`, `bajar.php` | Una corrida, un archivo y el .zip completo |
 | `llave.php` | La llave de subida: confirmar la que registró WizLink, el código para WizLink o una llave para pegar a mano |
 | `api/subir.php`, `api/registrar.php` | Donde sube WizLink, y donde registra su llave (que espera la confirmación) |
-| `lib/` | El código común (no se sirve): base, sesión, acceso (usuario y contraseña), código de la app, almacén, el horario de las corridas y el marco de las páginas |
+| `lib/` | El código común (no se sirve): base, sesión, acceso (usuario y contraseña), código de la app, almacén, el horario y los turnos del día, la lectura y explicación del diagnóstico, los problemas juntados y el marco de las páginas |
 | `assets/` | Estilos, iconos y los scripts del código QR y de «Copiar». `qrcode.js` es de Kazuhiko Arase (licencia MIT) |
-| `pruebas/` | La prueba de punta a punta (no se sirve) |
+| `pruebas/` | La prueba de punta a punta, las comprobaciones sin servidor (`avisos.php`, `explicar.php`) y la corrida inventada que usan (no se sirve) |
 
 ## Probar en una computadora
 Con Apache (`AllowOverride All`, `mod_rewrite`, `mod_headers`, `mod_ssl`) y PHP 8.3 con las extensiones `zip` y
@@ -144,7 +154,8 @@ de un solo uso, los dos bloqueos también con 20 intentos a la vez, que restable
 sesiones abiertas y que un `totp.json` dañado detenga la entrada), la llave, cada rechazo de la subida (llave, nombre con
 trampa, huella, no es .zip, `../` adentro, y que muchas llaves equivocadas no bloqueen la correcta), que la misma corrida
 con otra huella no reemplace a la guardada, la corrida «(2)», que una falla al guardar no deje nada a medias, la limpieza
-de 30 días, el panel del horario, el aviso de la pausa (y `pruebas/avisos.php`, el de las corridas atrasadas), lo que no se debe servir (`.git`, `lib/`, `pruebas/`, `.md`) y los encabezados de seguridad.
+(el .zip a los 7 días, el registro al año), el registro por mes, la explicación de una corrida inventada en las tres
+pestañas, el paso de los registros de antes al formato nuevo, el panel del horario, el aviso de la pausa (y `pruebas/avisos.php`, el de las corridas atrasadas; `pruebas/explicar.php`, la lectura del diagnóstico, los casos conocidos y los turnos), lo que no se debe servir (`.git`, `lib/`, `pruebas/`, `.md`) y los encabezados de seguridad.
 
 ## Cómo se revisa cada cambio
 Por pull request a `main`, con los chequeos de GitHub (`safety-checks` y `claude-review`) en verde; Iván lo fusiona.
