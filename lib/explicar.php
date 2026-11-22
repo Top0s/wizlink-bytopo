@@ -280,3 +280,9 @@ function explicacion_corta(array $d): string
     if (count($casos) > 2) $partes[] = h('Y ' . (count($casos) - 2) . (count($casos) - 2 === 1 ? ' caso más.' : ' casos más.'));
     return implode(' ', $partes);
 }
+
+/** Cambia cada serie de 6 o más dígitos por 9 del mismo largo («contrato 1234567» → «contrato 9999999»). */
+function tapar_numeros(string $s): string
+{
+    return (string)preg_replace_callback('/\d{6,}/', fn($m) => str_repeat('9', strlen($m[0])), $s);
+}

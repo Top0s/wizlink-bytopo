@@ -87,5 +87,9 @@ $tu = turnos_del_dia($t('2026-12-01 00:00'), [], $t('2026-12-01 00:30'));
 ok_e(count($tu) === 11 && $tu[1]['tipo'] === 'e365', 'turnos: el día 1, 11 corridas con la Extendida 365');
 ok_e(hora_turno($t('2026-11-22 00:00')) === '12:00a' && hora_turno($t('2026-11-22 15:00')) === '3:00p', 'turnos: la hora corta');
 
+// El registro que queda un año, sin números de contrato (Iván, 22-nov)
+ok_e(tapar_numeros('contrato 1234567 · REVISAR · MGA 07768 · 22NOV26') === 'contrato 9999999 · REVISAR · MGA 07768 · 22NOV26', 'registro: el contrato se tapa; la sucursal y el día no');
+ok_e(explicar_caso(['p' => 'R', 'texto' => tapar_numeros('contrato 1234567 · REVISAR'), 'motivo' => 'la página 1 no trae impuesto'])['id'] === 'recibo', 'registro: tapado, se sigue explicando');
+
 echo "\nexplicar: $total comprobaciones, $fallas fallas\n";
 exit($fallas > 0 ? 1 : 0);

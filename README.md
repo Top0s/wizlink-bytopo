@@ -14,7 +14,8 @@ aquí un .zip con su carpeta completa.
   no se puede ver, listar ni bajar nada.
 - **Guarda** cada corrida como un .zip en `wizlink-private/corridas/`, junto a `public_html` y nunca dentro: desde internet
   solo se llega a ellas entrando. Guarda el .zip 7 días (Iván, 22-nov) y después lo borra solo; queda el registro de
-  la corrida (resultado, tipo, duración, consultas y su diagnóstico en palabras) un año, para el registro por mes.
+  la corrida (resultado, tipo, duración, consultas y su diagnóstico en palabras) un año, para el registro por mes, con
+  los números de contrato o reserva (6 o más dígitos) cambiados por 9.
 - **Explica cada corrida a primera vista** (Iván, 22-nov: R6). Lee del .zip el resumen, el diagnóstico y el control
   (`lib/explicar.php`; sin sacar nada a disco y sin guardar pantallas ni archivos del caso) y dice en palabras qué pasó y
   qué hacer, con los casos ya conocidos (impresora P2, flota que no cuadra, desconexión de BlueZone, seguridad, Unify…);

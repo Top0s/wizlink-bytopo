@@ -264,11 +264,12 @@ ok($subir(array_merge(array_slice($cabBuena, 0, 2), ['X-WizLink-Corrida: ' . $vi
 ok(count(glob($privado . '/corridas/' . substr($clVieja, 0, 7) . '/' . $clVieja . '*.zip') ?: []) === 0, 'la limpieza también borra el .zip de la «(2)» de más de 7 días');
 // Una de hace 8 días: su .zip se borra; una de hace 6, no. Un registro de hace más de un año se borra.
 $ocho = date('Y-m-d H.i', time() - 8 * 86400); $seis = date('Y-m-d H.i', time() - 6 * 86400 + 3600);
-foreach ([$ocho, $seis] as $n) { $dn = corrida_inventada($n, ['casos' => [CASO_FLOTA]]); $subir(array_merge(array_slice($cabBuena, 0, 2), ['X-WizLink-Corrida: ' . $n, 'X-WizLink-Sha256: ' . hash('sha256', $dn)]), $dn); }
+foreach ([$ocho, $seis] as $n) { $dn = corrida_inventada($n, ['casos' => $n === $ocho ? [CASO_FLOTA, ['R', 'contrato 1234567 · REVISAR', 'la página 1 no trae impuesto']] : [CASO_FLOTA]]); $subir(array_merge(array_slice($cabBuena, 0, 2), ['X-WizLink-Corrida: ' . $n, 'X-WizLink-Sha256: ' . hash('sha256', $dn)]), $dn); }
 $ruta = fn(string $n, string $ext) => $privado . '/corridas/' . substr(clave_e2e($n), 0, 7) . '/' . clave_e2e($n) . $ext;
 ok(!is_file($ruta($ocho, '.zip')) && is_file($ruta($ocho, '.json')) && is_file($ruta($seis, '.zip')), 'la limpieza: a los 7 días se borra el .zip, antes no');
 $regOcho = json_decode((string)file_get_contents($ruta($ocho, '.json')), true);
 ok(($regOcho['forma'] ?? 0) === 2 && str_contains(json_encode($regOcho['casos'] ?? [], JSON_UNESCAPED_UNICODE), 'no coincide con la columna TOT'), 'el registro guarda el diagnóstico en palabras');
+ok(($regOcho['tapado'] ?? false) === true && str_contains(json_encode($regOcho['casos'] ?? [], JSON_UNESCAPED_UNICODE), 'contrato 9999999') && !str_contains((string)file_get_contents($ruta($ocho, '.json')), '1234567'), 'el registro sin .zip tapa el número de contrato');
 $anio = date('Y-m-d H.i', time() - 400 * 86400);
 @mkdir(dirname($ruta($anio, '.json')), 0700, true);
 file_put_contents($ruta($anio, '.json'), json_encode(['corrida' => $anio, 'recibida' => time() - 400 * 86400, 'resultado' => 'termino', 'forma' => 2]));

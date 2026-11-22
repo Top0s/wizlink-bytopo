@@ -532,6 +532,7 @@ function limpiar_viejas(int $ahora): int
         if ($m > 0 && $m < $limite) {
             $datos = leer_json(substr($f, 0, -4) . '.json');
             if ($datos !== null && (int)($datos['forma'] ?? 1) < DATOS_FORMA) rehacer_datos($clave, $datos);
+            tapar_registro(substr($f, 0, -4) . '.json');
             @unlink($f);
             $n++;
         }
@@ -546,6 +547,22 @@ function limpiar_viejas(int $ahora): int
     foreach (glob(carpeta('corridas/recibiendo') . '/*.part') ?: [] as $f) if ((int)@filemtime($f) < $ahora - 86400) @unlink($f);
     foreach (glob(carpeta('corridas') . '/*', GLOB_ONLYDIR) ?: [] as $d) @rmdir($d);   // solo si quedó vacía
     return $n;
+}
+
+/**
+ * El registro que queda un año, sin los números de contrato o reserva (Iván, 22-nov): al borrar el .zip, toda serie de 6
+ * o más dígitos en los casos y en el resultado se cambia por 9 del mismo largo. Ya no sirven para diagnosticar.
+ */
+function tapar_registro(string $archivo): void
+{
+    $d = leer_json($archivo);
+    if ($d === null || !empty($d['tapado'])) return;
+    foreach ($d['casos'] ?? [] as $i => $c) {
+        foreach (['texto', 'motivo'] as $k) if (isset($c[$k])) $d['casos'][$i][$k] = tapar_numeros((string)$c[$k]);
+    }
+    if (isset($d['detalle'])) $d['detalle'] = tapar_numeros((string)$d['detalle']);
+    $d['tapado'] = true;
+    escribir_json($archivo, $d);
 }
 
 /** Abre el .zip de una corrida para leerlo; null si no existe o no se puede. */
