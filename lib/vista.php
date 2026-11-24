@@ -74,7 +74,7 @@ function aviso(string $tipo, string $html): string
 function etiqueta_resultado(array $d): string
 {
     $r = $d['resultado'] ?? '';
-    $revisar = (int)($d['revisar'] ?? 0);
+    $revisar = en_revisar($d);
     if ($r === 'detuvo') return '<span class="chip chip-error"><span class="simbolo" aria-hidden="true">■</span>Se detuvo</span>';
     if ($r === 'sin_resumen') return '<span class="chip chip-neutro"><span class="simbolo" aria-hidden="true">?</span>Sin resumen</span>';
     if ($revisar > 0) return '<span class="chip chip-atencion"><span class="simbolo" aria-hidden="true">!</span>Terminó · ' . $revisar . ' en revisar</span>';

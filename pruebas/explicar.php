@@ -6,6 +6,7 @@ declare(strict_types=1);
 
 require dirname(__DIR__) . '/lib/problemas.php';
 require __DIR__ . '/corrida_inventada.php';
+const CASO_DESCONEXION_ARR = ['p' => 'N', 'texto' => 'Se detuvo · flota', 'motivo' => 'BlueZone se desconectó'];
 
 $fallas = 0; $total = 0;
 function ok_e(bool $c, string $d): void { global $fallas, $total; $total++; if (!$c) { $fallas++; echo "FALLA: $d\n"; } }
@@ -86,6 +87,42 @@ ok_e($tu[2]['corrida']['clave'] === '2026-11-22_04.02' && $tu[2]['tipo'] === 'e1
 $tu = turnos_del_dia($t('2026-12-01 00:00'), [], $t('2026-12-01 00:30'));
 ok_e(count($tu) === 11 && $tu[1]['tipo'] === 'e365', 'turnos: el día 1, 11 corridas con la Extendida 365');
 ok_e(hora_turno($t('2026-11-22 00:00')) === '12:00a' && hora_turno($t('2026-11-22 15:00')) === '3:00p', 'turnos: la hora corta');
+
+// Lo que quedó en revisar sin una consulta en REVISAR (Iván, 24-nov): un contrato que se cerró durante la corrida
+$rec = datos_inventados('2026-11-24 00.00', ['casos' => [CASO_RECIBO]]);
+ok_e($rec['revisar'] === 0 && en_revisar($rec) === 1, 'revisar: un contrato suelto cuenta aunque el control esté en OK');
+ok_e(str_contains(etiqueta_resultado($rec), 'Terminó · 1 en revisar') && str_contains(etiqueta_resultado($rec), 'chip-atencion'), 'revisar: la etiqueta dice «Terminó · 1 en revisar»');
+ok_e(en_revisar(datos_inventados('2026-11-24 00.00', ['casos' => [CASO_RECIBO, CASO_MAS_CONTRATOS]])) === 4, 'revisar: «y 3 contratos o recibos más» cuenta 3');
+ok_e(en_revisar($d) === 3 && en_revisar(['revisar' => 2, 'casos' => []]) === 2 && en_revisar($op) === 0, 'revisar: las consultas cuentan igual que antes, sin contar dos veces');
+ok_e(en_revisar(['casos' => [CASO_DESCONEXION_ARR]]) === 0, 'revisar: un caso de ENTORNO no cuenta como revisar');
+$er = explicar_caso(['p' => 'R', 'texto' => CASO_RECIBO[1], 'motivo' => CASO_RECIBO[2]]);
+ok_e($er['id'] === 'cerrado_en_corrida' && $er['titulo'] === 'Un contrato se cerró durante la corrida' && !$er['grave'] && str_starts_with($er['hacer'], 'Nada'), 'explicar: un contrato que se cerró durante la corrida');
+$tu = turnos_del_dia($t('2026-11-24 00:00'), [$rec + ['clave' => '2026-11-24_00.00']], $t('2026-11-24 01:00'));
+ok_e($tu[0]['estado'] === 'rev', 'turnos: el cuadrito de esa corrida va en «Revisar»');
+
+// Problemas por cuándo pasó (Iván, 24-nov: A2): hoy, ayer, esta semana y los meses
+$ahora = $t('2026-11-24 11:30');
+$per = periodos_problemas($ahora);
+ok_e(array_column($per, 'id') === ['hoy', 'ayer', 'semana', 'mes', 'anterior'] && $per[0]['sub'] === 'martes 24 nov' && $per[2]['sub'] === 'del 18 nov al 22 nov'
+     && $per[3]['titulo'] === 'Antes en noviembre' && $per[4]['titulo'] === 'Octubre 2026' && $per[4]['hasta'] === $t('2026-11-01 00:00'), 'periodos: el 24 nov');
+$per = periodos_problemas($t('2026-12-03 08:00'));
+ok_e(array_column($per, 'id') === ['hoy', 'ayer', 'semana', 'anterior'] && $per[2]['sub'] === 'del 27 nov al 1 dic' && $per[3]['titulo'] === 'Noviembre 2026'
+     && $per[3]['hasta'] === $t('2026-11-27 00:00') && $per[3]['sub'] === 'hasta el 26 nov', 'periodos: a principio de mes, sin cruzarse con la semana');
+$h1 = datos_inventados('2026-11-24 09.00', []);
+$h2 = datos_inventados('2026-11-24 03.00', []);
+$h3 = $rec;
+$s1 = datos_inventados('2026-11-21 10.15', ['casos' => [CASO_FLOTA]]);
+$s2 = datos_inventados('2026-11-20 12.30', ['casos' => [CASO_FLOTA, CASO_IMPRESORA]]);
+$m1 = datos_inventados('2026-11-05 12.30', ['casos' => [CASO_IMPRESORA]]);
+$x = problemas_por_periodo([$h1, $h2, $h3, $s1, $s2, $m1], $ahora);
+$pp = array_column($x['periodos'], null, 'id');
+ok_e(count($pp['hoy']['problemas']) === 1 && $pp['hoy']['corridas'] === 3 && $pp['hoy']['problemas'][0]['id'] === 'cerrado_en_corrida'
+     && !$pp['hoy']['problemas'][0]['abierto'] && $pp['hoy']['problemas'][0]['despues'] === 2, 'por periodo: hoy, el contrato de las 12:00, que no se repitió en 2 corridas');
+ok_e($pp['ayer']['corridas'] === 0 && $pp['ayer']['problemas'] === [], 'por periodo: ayer, sin corridas');
+ok_e(count($pp['semana']['problemas']) === 2 && $pp['semana']['corridas'] === 2 && $pp['semana']['problemas'][0]['corridas'] + $pp['semana']['problemas'][1]['corridas'] === 3, 'por periodo: esta semana, la flota (2) y la impresora (1)');
+ok_e(count($pp['mes']['problemas']) === 1 && $pp['mes']['problemas'][0]['id'] === 'impresora' && $x['mes'] === 3, 'por periodo: antes en noviembre, la impresora; 3 problemas distintos en el mes');
+$x = problemas_por_periodo([$rec, $s1], $ahora);
+ok_e(array_column($x['periodos'], null, 'id')['hoy']['problemas'][0]['abierto'] === true, 'por periodo: en la corrida más nueva, abierto');
 
 // El registro que queda un año, sin números de contrato (Iván, 22-nov)
 ok_e(tapar_numeros('contrato 1234567 · REVISAR · MGA 07768 · 22NOV26') === 'contrato 9999999 · REVISAR · MGA 07768 · 22NOV26', 'registro: el contrato se tapa; la sucursal y el día no');

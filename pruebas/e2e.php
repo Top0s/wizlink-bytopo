@@ -173,7 +173,8 @@ $pr = pedir('GET', '/problemas.php');
 ok($pr['codigo'] === 200 && str_contains($pr['cuerpo'], 'href="/problemas.php" aria-current="page"'), 'problemas: se abre, con su pestaña marcada');
 ok(substr_count($pr['cuerpo'], 'id="horario"') === 1 && substr_count($pr['cuerpo'], 'class="horario-proxima"') === 1, 'horario: el panel con una sola próxima corrida');
 ok(substr_count($pr['cuerpo'], '<tr') === 2 + 12 + 11 && str_contains($pr['cuerpo'], 'Ext. 365') && str_contains($pr['cuerpo'], 'Ext. 120') && str_contains($pr['cuerpo'], 'Normal</span>'), 'horario: las dos tablas, día normal y día 1');
-ok(str_contains($pr['cuerpo'], 'La corrida más nueva no trae ningún problema') || str_contains($pr['cuerpo'], 'Todavía no llegó ninguna corrida'), 'problemas: sin corridas, nada abierto');
+ok(str_contains($pr['cuerpo'], 'Hoy todavía no llegó ninguna corrida') || str_contains($pr['cuerpo'], 'Hoy no hubo problemas'), 'problemas: sin problemas hoy, lo dice arriba');
+ok(substr_count($pr['cuerpo'], '<li class="cj-') === 4 && str_contains($pr['cuerpo'], 'href="#hoy"') && str_contains($pr['cuerpo'], 'id="semana"'), 'problemas: las cuatro cajas y las secciones por cuándo pasó');
 $te = pedir('GET', '/tendencias.php');
 ok($te['codigo'] === 200 && str_contains($te['cuerpo'], 'Duración real, Operativa') && str_contains($te['cuerpo'], 'Todavía no hay corridas con duración'), 'tendencias: se abre aun sin corridas');
 ok(str_contains($l['cuerpo'], 'Todavía no hay llave de subida'), 'avisa que falta la llave');
@@ -425,7 +426,10 @@ ok(str_contains($l['cuerpo'], 'La impresora P2 de BlueZone no imprimió') && str
 ok(!preg_match('/Duró 0 h /', $l['cuerpo']), 'explicar: menos de una hora, sin «0 h»');
 ok(preg_match('/Problemas<span class="cuenta-barra"><span aria-hidden="true">!<\/span>&nbsp;2/', $l['cuerpo']) === 1, 'pestañas: Problemas dice 2 abiertos');
 $pr = pedir('GET', '/problemas.php');
-ok(substr_count($pr['cuerpo'], '<article class="problema') === 2 && str_contains($pr['cuerpo'], 'en 2 sucursales') && str_contains($pr['cuerpo'], 'en MGA 07768, día 22NOV26'), 'problemas: la impresora (2 sucursales) y la flota');
+$seccionHoy = function (string $html): string { $i = strpos($html, 'id="hoy"'); $j = strpos($html, 'id="ayer"'); return $i !== false && $j !== false ? substr($html, $i, $j - $i) : ''; };
+$hoyPr = $seccionHoy($pr['cuerpo']);
+ok(substr_count($hoyPr, '<article class="problema') === 2 && str_contains($hoyPr, 'en 2 sucursales') && str_contains($hoyPr, 'en MGA 07768, día 22NOV26'), 'problemas: hoy, la impresora (2 sucursales) y la flota');
+ok(str_contains($pr['cuerpo'], 'Hoy hubo 2 problemas:') && substr_count($hoyPr, '</span>Revisar</span>') === 2, 'problemas: arriba dice lo de hoy, y los dos siguen abiertos');
 ok(str_contains($pr['cuerpo'], 'Todas las corridas de hoy') && str_contains($pr['cuerpo'], '1 h 14 min 32 s'), 'problemas: la tabla de hoy');
 $ce = pedir('GET', '/corrida.php?c=' . rawurlencode(clave_e2e($ext)));
 ok(str_contains($ce['cuerpo'], 'Qué pasó') && str_contains($ce['cuerpo'], 'Connected') && str_contains($ce['cuerpo'], 'WizLink dice'), 'la corrida explica qué pasó y qué hacer');
@@ -467,6 +471,23 @@ file_put_contents($jsonPausa, json_encode($dj));
 ok(str_contains(pedir('GET', '/')['cuerpo'], 'reportó la corrida automática en pausa'), 'pausa: con los datos de la versión 1.4.0, la lee del .zip');
 $r = $conEstado(date('Y-m-d H.i'), "pausa=\r\nque_hacer=\r\n");
 ok($r['codigo'] === 200 && !str_contains(pedir('GET', '/')['cuerpo'], 'reportó la corrida automática en pausa'), 'pausa: la corrida siguiente, sin pausa, lo quita');
+
+// Un contrato que se cerró durante la corrida (Iván, 24-nov): todas las consultas en OK, pero el diagnóstico trae un
+// contrato en REVISIÓN. La lista dice «Terminó · 1 en revisar», el filtro la muestra y en Problemas queda en Hoy, aunque
+// las corridas siguientes ya no lo traigan.
+$conRecibo = date('Y-m-d H.i', max((int)strtotime('today'), time() - 1800));
+$dr = corrida_inventada($conRecibo, ['casos' => [CASO_RECIBO]]);
+ok($subir(array_merge(array_slice($cabBuena, 0, 2), ['X-WizLink-Corrida: ' . $conRecibo, 'X-WizLink-Sha256: ' . hash('sha256', $dr)]), $dr)['codigo'] === 200, 'recibo: la corrida se recibe');
+$l = pedir('GET', '/');
+ok(str_contains($l['cuerpo'], 'Terminó · 1 en revisar') && str_contains($l['cuerpo'], 'Un contrato se cerró durante la corrida'), 'recibo: la lista dice «Terminó · 1 en revisar» y por qué');
+ok(str_contains(pedir('GET', '/?ver=problemas')['cuerpo'], 'Un contrato se cerró durante la corrida'), 'recibo: el filtro «Solo con algo para revisar» la muestra');
+$pr = pedir('GET', '/problemas.php');
+$hoyPr = $seccionHoy($pr['cuerpo']);
+ok(str_contains($hoyPr, 'Un contrato se cerró durante la corrida') && str_contains($hoyPr, '</span>Pasó hoy</span>') && str_contains($hoyPr, 'No se repitió en'), 'recibo: en Problemas, en Hoy, «Pasó hoy»');
+ok(str_contains($pr['cuerpo'], 'Hoy hubo 3 problemas:') && str_contains($pr['cuerpo'], 'La corrida más nueva ya no lo trae.'), 'recibo: arriba, los 3 de hoy');
+ok(preg_match('/Problemas<span class="cuenta-barra"><span aria-hidden="true">!<\/span>&nbsp;3/', $pr['cuerpo']) === 1, 'recibo: la pestaña cuenta los 3 de hoy');
+$ce = pedir('GET', '/corrida.php?c=' . rawurlencode(clave_e2e($conRecibo)));
+ok(str_contains($ce['cuerpo'], 'Terminó · 1 en revisar'), 'recibo: la corrida también lo dice arriba');
 
 // ------------------------------------------------------------------ salir
 $fs = preg_match('/action="\/salir.php"><input type="hidden" name="ficha" value="([0-9a-f]{64})"/', $l['cuerpo'], $m) ? $m[1] : '';
