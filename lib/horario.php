@@ -209,7 +209,7 @@ function turnos_del_dia(int $dia, array $corridas, int $ahora): array
         foreach ($porMomento as [$t, $x]) if ($t >= $desde && $t < $hasta) { $d = $x; break; }
         if ($d !== null) {
             $r = $d['resultado'] ?? '';
-            $estado = $r === 'detuvo' ? 'det' : ($r === 'sin_resumen' ? 'sin' : ((int)($d['revisar'] ?? 0) > 0 ? 'rev' : 'ok'));
+            $estado = $r === 'detuvo' ? 'det' : ($r === 'sin_resumen' ? 'sin' : (en_revisar($d) > 0 ? 'rev' : 'ok'));
         } elseif ($ahora >= $hr['ts'] + (TIPOS_CORRIDA[$hr['tipo']]['minutos'] + 60) * 60) {
             $estado = 'falta';
         } elseif ($ahora >= $hr['ts']) {

@@ -153,6 +153,12 @@ function casos_conocidos(): array
          'titulo' => 'Las reservas quedaron incompletas',
          'que' => 'El manifiesto no llegó a END OF REPORT (el tope de páginas).',
          'hacer' => 'Si se repite, pida la revisión en WizLink con este diagnóstico.'],
+        // Un abierto que se cerró entre la lectura de la lista y su impresión: Wizard da el recibo (Iván, 24-nov). La corrida
+        // siguiente lo lee entre los cerrados.
+        ['id' => 'cerrado_en_corrida', 'busca' => '/RECIBO: el contrato ya se cerró/u', 'grave' => false, 'por_sucursal' => false,
+         'titulo' => 'Un contrato se cerró durante la corrida',
+         'que' => 'Estaba en la lista de abiertos, pero se cerró antes de que WizLink lo imprimiera: Wizard dio el recibo con los cargos reales. No es un error de lectura.',
+         'hacer' => 'Nada: la corrida siguiente lo lee entre los cerrados, con su recibo.'],
         ['id' => 'recibo', 'busca' => '/^(recibos|contrato) ·|NO CUADRA|no trae impuesto/u', 'grave' => false, 'por_sucursal' => true,
          'titulo' => 'Un recibo o un contrato no cuadró por dentro',
          'que' => 'WizLink no pudo leer con seguridad un recibo o un contrato impreso y lo dejó en revisar.',
@@ -222,6 +228,21 @@ function casos_explicados(array $d): array
     // Primero lo grave
     uasort($grupos, fn($a, $b) => (int)$b['grave'] <=> (int)$a['grave']);
     return array_values($grupos);
+}
+
+/**
+ * Cuántas cosas quedaron en revisar en una corrida (Iván, 24-nov): los casos de la parte REVISIÓN del diagnóstico, que
+ * traen las consultas y también los contratos o recibos sueltos («y 3 contratos o recibos más» cuenta 3). Las consultas
+ * del control que no quedaron en OK cuentan si son más (una corrida sin diagnóstico o con más casos de los que se guardan).
+ */
+function en_revisar(array $d): int
+{
+    $n = 0;
+    foreach (($d['casos'] ?? []) as $c) {
+        if (!is_array($c) || ($c['p'] ?? '') !== 'R') continue;
+        $n += preg_match('/^y (\d{1,5}) contratos/u', (string)($c['texto'] ?? ''), $m) ? (int)$m[1] : 1;
+    }
+    return max($n, (int)($d['revisar'] ?? 0));
 }
 
 /** «en MGA 07768», «en 6 sucursales» o ''. */

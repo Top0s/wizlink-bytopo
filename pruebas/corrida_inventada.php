@@ -62,3 +62,6 @@ const CASO_IMPRESORA = ['R', 'impresion · MN5 07769 · REVISAR', 'Wizard dijo "
 const CASO_IMPRESORA2 = ['R', 'impresion · LEO 07770 · NO SE CORRIÓ', 'No se imprimen más contratos: revise que la impresora de BlueZone (P2) esté abierta y en "Generic / Text Only".'];
 const CASO_DESCONEXION = ['N', 'Se detuvo a las 03:07:40 · flota · CH0 07771 · 22NOV26', 'BlueZone se desconectó del mainframe: la sesión de Wizard se cerró con la desconexión y WizLink no tecleó nada más.'];
 const CASO_NUEVO = ['R', 'reservas · RIV 07772 · 23NOV26 · REVISAR · leídas 3', 'un caso que nadie había visto'];
+// Un abierto que se cerró durante la corrida (24-nov): solo en el diagnóstico; todas las consultas del control, en OK
+const CASO_RECIBO = ['R', 'contrato 999999999 · REVISAR', 'RECIBO: el contrato ya se cerró; trae cargos reales (total pagado 99.00), no el estimado. Sus columnas propias están en el detalle de la corrida (propuesta)'];
+const CASO_MAS_CONTRATOS = ['R', 'y 3 contratos o recibos más en REVISAR (están en el resumen).', ''];

@@ -350,3 +350,21 @@ input[type="text"], input[type="password"], input:not([type]), input[inputmode] 
   .tabla .ocultar { display: none; } .solo-tel { display: inline; }
   .tabla td, .tabla th { padding: 8px 6px; } .tabla { font-size: .85rem; } .tabla .chip { white-space: normal; }
 }
+
+/* ------------------------------------------------------------------ 2.1.0: Problemas por cuándo pasó (Iván, 24-nov: A2) */
+.cuando-cajas { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; margin: 0 0 18px; padding: 0; list-style: none; }
+.cuando-cajas a { display: flex; flex-direction: column; gap: 2px; border: 2px solid; border-radius: 10px; padding: 10px 12px; text-decoration: none; min-height: 64px; }
+.cuando-cajas .c-n { font-size: 1.35rem; font-weight: 700; }
+.cuando-cajas .c-t { font-weight: 600; font-size: .9rem; }
+.cuando-cajas .c-s { font-size: .8rem; }
+.cj-rev a { background: var(--atencion-f); border-color: var(--atencion-b); color: var(--atencion-t); }
+.cj-ok a { background: var(--exito-f); border-color: var(--exito-b); color: var(--exito-t); }
+.cj-neu a { background: var(--tarjeta); border-color: var(--borde-fuerte); color: var(--texto); }
+.grupo-cuando { margin: 22px 0 8px; display: flex; gap: 10px; align-items: center; flex-wrap: wrap; font-size: 1.1rem; font-weight: 600; }
+.grupo-cuando .sub, details.mas .sub { font-weight: 400; color: var(--texto-2); font-size: .9rem; }
+.grupo-vacio { font-size: 1.05rem; margin: 10px 0; }
+.nada { color: var(--texto-2); margin: 0 0 8px; font-size: .93rem; }
+details.mas { margin: 10px 0; }
+details.mas > summary { cursor: pointer; font-weight: 600; font-size: 1.05rem; padding: 8px 0; min-height: 32px; color: var(--texto); }
+details.mas > .problemas { margin-top: 8px; }
+@media (max-width: 700px) { .cuando-cajas { grid-template-columns: repeat(2, minmax(0, 1fr)); } }

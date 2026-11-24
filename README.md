@@ -24,8 +24,10 @@ aquí un .zip con su carpeta completa.
 - **Tres pestañas en la barra de arriba:** «Corridas» (las corridas del horario de hoy, turno por turno, y debajo las
   recibidas por día, cada una con su explicación; los meses anteriores, solo con su registro, en `?mes=AAAA-MM`),
   «Tendencias» (cuántas corridas de hoy salieron bien, lo que dura cada tipo contra lo estimado y las consultas en
-  revisar por día) y «Problemas» (cada problema de los últimos 7 días juntado, desde cuándo, qué pasó y qué hacer, con
-  su cuenta en la barra; `lib/problemas.php`). Cada corrida tiene accesos directos al resumen, el diagnóstico, la
+  revisar por día) y «Problemas» (cada problema juntado, con cuándo, qué pasó y qué hacer, separado en Hoy, Ayer, Esta
+  semana y los meses, con cuatro cajas arriba y su cuenta en la barra: lo de hoy y lo que sigue abierto;
+  `lib/problemas.php`). Una corrida lleva «! Terminó · N en revisar» si su diagnóstico trae algo en REVISIÓN, también un
+  contrato o un recibo suelto, aunque todas sus consultas quedaran en OK. Cada corrida tiene accesos directos al resumen, el diagnóstico, la
   bitácora y el control, todos sus archivos para ver o bajar, y el .zip completo mientras se guarda.
 - **Tiene a la vista el horario de las corridas automáticas** (en «Problemas», a la derecha; en el teléfono, al final, con
   la próxima corrida arriba): el de hoy, con la próxima marcada, y el otro (día normal o día 1 del mes) a un clic. Es una
